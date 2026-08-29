@@ -1,3 +1,4 @@
+import logging
 import math
 
 from gpiozero import OutputDevice
@@ -5,82 +6,70 @@ from gpiozero import OutputDevice
 
 class ServoController:
     """
-    Handles controlling a servo through sending commands to STM32 over I2C, and enabling
-    servos through a GPIO pin connected to a mosfet in series with the servo power.
+    Controls a servo through the STM32 over I2C.
 
-
-        All angles are in radians.
-
+    Angles supplied to set_angle() are in radians.
     """
 
-    def __init__(self, servo_id=0, stm_address=0x67, servo_cmd=0x10, gpio_pin=1) -> None:
-        self.servo_id: int = servo_id
-        self.stm_address: int = stm_address
-        self.servo_cmd: int = servo_cmd
-        self.gpio_pin: int = gpio_pin
+    def __init__(
+        self,
+        i2c_controller,
+        servo_id: int,
+        i2c_address: int = 0x67,
+        servo_cmd: int = 0x10,
+        gpio_pin: int = 1,
+    ) -> None:
 
-        self.gpio_device = OutputDevice(self.gpio_pin, active_high=True, initial_value=False)
+        self.logger = logging.getLogger("servo_controller")
+
+        self.i2c_controller = i2c_controller
+
+        self.servo_id = servo_id & 0xFF
+        self.i2c_address = i2c_address & 0x7F
+        self.servo_cmd = servo_cmd & 0xFF
+
+        self.gpio_device = OutputDevice(
+            gpio_pin,
+            active_high=True,
+            initial_value=False,
+        )
 
     @staticmethod
     def rads_to_degrees(angle: float) -> float:
+        """Convert radians to degrees."""
+        return angle * 180.0 / math.pi
+
+    def set_angle(self, angle: float) -> bool:
         """
-        Convert radians to degrees.
+        Set the servo position.
 
-        :param angle: Angle in radians.
-        :type angle: float
-
-        :returns: Angle in degrees.
-        :rtype: float
+        :param angle: Servo angle in radians.
+        :return: True if the command was sent successfully.
         """
-        return angle * 180 / math.pi
 
-    def servo_callback(self, request):
-        """
-        Set servo position.
+        degrees = int(self.rads_to_degrees(angle))
+        degrees = max(0, min(degrees, 180))
 
-        Receives servo position in radians, and converts it to degrees
-        to send to the STM32 over I2C.
+        # Enable servo power
+        self.gpio_device.on()
 
-        :param msg: Angle to set servo to in radians.
-        :type msg: Float32
-        """
-        degrees = int(self.rads_to_degrees(request.angle))
-        degrees = min(max(degrees, 0), 180) & 0xFF
+        write_response = self.i2c_controller.handle_write(
+            self.i2c_address,
+            self.servo_cmd,
+            [self.servo_id, degrees],
+        )
 
-        i2c_request = I2CWrite.Request()
+        if not write_response["success"]:
+            self.logger.error(f"Servo {self.servo_id} command failed: {write_response['message']}")
+            return False
 
-        i2c_request.device_address = self.i2c_address
-        i2c_request.register_address = self.servo_cmd
-        i2c_request.data = [self.servo_id, degrees]
+        return True
 
-        # self.get_logger().info(f'Servo {self.service_name} called with angle {degrees}')
-
-        try:
-            self.gpio_device.on()
-            future = self.cli.call_async(i2c_request)
-            i2c_response = await future
-
-            if i2c_response is None:
-                response.success = False
-                response.message = "No response from I2C service"
-                return response
-
-            if not i2c_response.success:
-                response.success = False
-                response.message = i2c_response.message
-                return response
-
-            response.success = True
-            response.message = ""
-
-        except Exception as e:
-            response.success = False
-            response.message = str(e)
-
-            self.get_logger().error(f"Servo command failed: {e}")
-
-        return response
+    def disable(self) -> None:
+        """Disable power to the servo."""
+        self.gpio_device.off()
 
     def cleanup(self) -> None:
-        """Turn off servo on node exit."""
+        """Clean up the GPIO device."""
         self.gpio_device.off()
+        self.gpio_device.close()

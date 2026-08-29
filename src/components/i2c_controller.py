@@ -1,15 +1,8 @@
-try:
-    import adafruit_vl53l1x
-    import board
-    import busio
+import adafruit_vl53l1x
+import board
+import busio
 
-except ImportError:
-    from unittest.mock import MagicMock
-
-    adafruit_vl53l1x = MagicMock()
-    board = MagicMock()
-    busio = MagicMock()
-
+import logging
 import threading
 from smbus2 import SMBus
 
@@ -28,12 +21,14 @@ class I2CBusController:
     MOVE_TIME_C_CMD = 0x85
 
     def __init__(self) -> None:
+        self.logger = logging.getLogger("i2c_controller")
+
         try:
             self.bus = SMBus(1)
 
         except OSError as e:
-            self.get_logger().fatal(f"Failed to initialize I2C device! {e}")
-            return
+            self.logger.error(f"Failed to initialize I2C device! {e}")
+            raise
 
         self.i2c_lock = threading.Lock()
 
@@ -63,37 +58,37 @@ class I2CBusController:
                 try:
                     self.claw_tof_en.on()
                     self.claw_tof = adafruit_vl53l1x.VL53L1X(self.adafruit_i2c)
-                    self.claw_tof.set_address(self.claw_tof_addr)
+                    self.claw_tof.set_address(self.CLAW_TOF_ADDR)
                     self.claw_tof.start_ranging()
                     self.claw_tof_enabled = True
                 except Exception as e:
                     self.claw_tof_en.off()
                     self.claw_tof_enabled = False
-                    print(f"Claw TOF init failed! {e}")
+                    self.logger.warning(f"Claw TOF init failed! {e}")
 
             if not self.right_tof_enabled:
                 try:
                     self.right_tof_en.on()
                     self.right_tof = adafruit_vl53l1x.VL53L1X(self.adafruit_i2c)
-                    self.right_tof.set_address(self.right_tof_addr)
+                    self.right_tof.set_address(self.RIGHT_TOF_ADDR)
                     self.right_tof.start_ranging()
                     self.right_tof_enabled = True
                 except Exception as e:
                     self.right_tof_en.off()
                     self.right_tof_enabled = False
-                    print(f"Right TOF init failed! {e}")
+                    self.logger.warning(f"Right TOF init failed! {e}")
 
             if not self.front_tof_enabled:
                 try:
                     self.front_tof_en.on()
                     self.front_tof = adafruit_vl53l1x.VL53L1X(self.adafruit_i2c)
-                    self.front_tof.set_address(self.front_tof_addr)
+                    self.front_tof.set_address(self.FRONT_TOF_ADDR)
                     self.front_tof.start_ranging()
                     self.front_tof_enabled = True
                 except Exception as e:
                     self.front_tof_en.off()
                     self.front_tof_enabled = False
-                    print(f"Front TOF init failed! {e}")
+                    self.logger.warning(f"Front TOF init failed! {e}")
 
             if self.claw_tof_enabled and self.right_tof_enabled and self.front_tof_enabled:
                 break
@@ -162,7 +157,7 @@ class I2CBusController:
         read_msg = self.handle_read(self.STM_ADDR, self.ULTRASONIC_CMD, 4)
 
         if not read_msg["success"]:
-            print(f"I2C ultrasonic read failed: {read_msg['message']}")
+            self.logger.warning(f"I2C ultrasonic read failed: {read_msg['message']}")
         else:
             dist: int = int.from_bytes(read_msg["data"])
 
@@ -173,7 +168,7 @@ class I2CBusController:
         read_msg = self.handle_read(self.STM_ADDR, self.TEMP_CMD, 4)
 
         if not read_msg["success"]:
-            print(f"I2C temp read failed: {read_msg['message']}")
+            self.logger.warning(f"I2C temp read failed: {read_msg['message']}")
         else:
             temp: float = int.from_bytes(read_msg["data"]) / 100
 
@@ -185,7 +180,7 @@ class I2CBusController:
         read_msg = self.handle_read(self.STM_ADDR, self.STATE_CMD, 1)
 
         if not read_msg["success"]:
-            print(f"I2C state read failed: {read_msg['message']}")
+            self.logger.warning(f"I2C state read failed: {read_msg['message']}")
         else:
             state: int = int.from_bytes(read_msg["data"])
 
@@ -196,7 +191,7 @@ class I2CBusController:
         read_msg = self.handle_read(self.STM_ADDR, self.MOVE_TIME_C_CMD, 4)
 
         if not read_msg["success"]:
-            print(f"I2C move time read failed: {read_msg['message']}")
+            self.logger.warning(f"I2C move time read failed: {read_msg['message']}")
         else:
             count: int = int.from_bytes(read_msg["data"])
 

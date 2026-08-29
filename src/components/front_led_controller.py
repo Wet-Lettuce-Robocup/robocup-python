@@ -1,3 +1,5 @@
+import logging
+
 from src.components.pwm_controller import PWMController
 
 
@@ -6,6 +8,8 @@ class LEDController:
     PERIOD = 100000
 
     def __init__(self) -> None:
+        self.logger = logging.getLogger("i2c_controller")
+
         self.pwm_controller = PWMController(pwm_channel=self.PWM_CHANNEL)
         self.target_brightness = 0
 

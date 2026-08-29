@@ -1,3 +1,4 @@
+import logging
 from math import isclose
 from pathlib import Path
 import time
@@ -26,6 +27,8 @@ class FanController:
     HIGH_TEMP, HIGH_SPEED = 70, 100
 
     def __init__(self) -> None:
+        self.logger = logging.getLogger("fan_controller")
+
         self.last_auto_speed = 0
         self.auto_enabled = True
         self.pi_temp_path = Path("/sys/class/thermal/thermal_zone0/temp")
@@ -55,7 +58,7 @@ class FanController:
             spd = self.IDLE_SPEED
 
         if spd != self.last_auto_speed and self.auto_enabled:
-            print(f"Automatically setting fan target to {spd}%")
+            self.logger.info(f"Automatically setting fan target to {spd}%")
             self.set_fan_speed(spd)
 
         self.last_auto_speed = spd
@@ -71,12 +74,12 @@ class FanController:
         self.auto_enabled = False
 
         target_speed = msg
-        print(f"Manually setting fan target to {target_speed}%")
+        self.logger.info(f"Manually setting fan target to {target_speed}%")
         self.set_fan_speed(target_speed)
 
     def set_fan_speed(self, target_speed: int) -> None:
         if target_speed < 0 or target_speed > 100:
-            print("Target speed must be between 0 and 100!")
+            self.logger.warning("Target speed must be between 0 and 100!")
             return
 
         self.target_speed = target_speed
@@ -107,7 +110,7 @@ class FanController:
             # if fan is stopped, set target to 0 to prevent excess current draw
             self.set_fan_speed(0)
 
-            print("Fan is stalling, disabling fan")
+            self.logger.warning("Fan is stalling, disabling fan")
         # convert to percentage of max speed (2000 RPM)
         self.current_speed = int((rpm / self.MAX_RPM) * 100)
 
@@ -121,9 +124,11 @@ class FanController:
         self.calculate_speed()
         if self.current_speed > 0:
             if isclose(self.current_speed, self.target_speed, abs_tol=10):
-                print("Target is close to current speed, fan is working")
+                self.logger.info("Target is close to current speed, fan is working")
             else:
-                print("Target is not close to current speed")
+                self.logger.warning("Target is not close to current speed")
         else:
-            print("Fan speed is 0")
-        print(f"target speed: {self.target_speed}% | current speed: {self.current_speed}%")
+            self.logger.info("Fan speed is 0")
+        self.logger.info(
+            f"target speed: {self.target_speed}% | current speed: {self.current_speed}%"
+        )
