@@ -4,7 +4,7 @@ import cv2
 from picamera2 import Picamera2
 
 
-class FrontCamera:
+class DownCamera:
     def __init__(self):
         self.cam = Picamera2(1)
         self._init_camera()
@@ -56,7 +56,7 @@ class FrontCamera:
             debug_frame = raw_frame.copy()
             cv2.rectangle(debug_frame, debug_top_left, debug_bottom_right, (0, 0, 255), 2)
             cv2.imshow("Frame", debug_frame)
-            cv2.waitKey(0)
+            cv2.waitKey(1)
             return raw_frame, cropped_frame, debug_top_left, debug_bottom_right
         else:
             return raw_frame, cropped_frame
