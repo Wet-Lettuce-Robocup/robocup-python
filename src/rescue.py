@@ -1,8 +1,7 @@
 import time
 
-from src.robot import Robot
 from src.components.vision import Vision
-from src.components.servo_controller import ServoController
+from src.robot import Robot
 
 
 class Rescue:

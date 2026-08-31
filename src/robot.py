@@ -1,11 +1,7 @@
-#!/usr/bin/env python3
-
-from smbus2 import smbus2
-import adafruit_vl53l1x
-import board
-from gpiozero import OutputDevice
+import logging
 import time
-from servos import Servo
+
+from src.components.servo_controller import ServoController
 
 
 class Robot:
@@ -16,39 +12,15 @@ class Robot:
     ENCODER_REQUEST = 0x82
     ENCODER_LEN = 16
 
-    def __init__(self) -> None:
-        self.bus = smbus2.SMBus(1)
+    def __init__(self, i2c_controller) -> None:
 
-        self.servo_grab = Servo(0, 4)
-        self.servo_lift = Servo(1, 0)
-        self.servo_tray_release = Servo(2, 1)
+        self.logger = logging.getLogger("robot")
 
-        i2c = board.I2C()
+        self.i2c_controller = i2c_controller
 
-        print("Initializing ToF sensors...")
-
-        front_xshut = OutputDevice(7, active_high=True)
-        side_xshut = OutputDevice(19, active_high=True)
-
-        front_xshut.off()
-        side_xshut.off()
-        time.sleep(0.5)
-
-        front_xshut.on()
-        time.sleep(0.5)
-
-        self.fronttof = adafruit_vl53l1x.VL53L1X(i2c)
-        print("Front ToF sensor initialized.")
-        self.fronttof.set_address(0x30)
-
-        side_xshut.on()
-        time.sleep(0.05)
-
-        self.sidevl53 = adafruit_vl53l1x.VL53L1X(i2c)
-        print("Side ToF sensor initialized.")
-
-        self.fronttof.start_ranging()
-        self.sidevl53.start_ranging()
+        self.servo_grab = ServoController(self.i2c_controller, servo_id=0, gpio_pin=4)
+        self.servo_lift = ServoController(self.i2c_controller, servo_id=1, gpio_pin=0)
+        self.servo_tray_release = ServoController(self.i2c_controller, servo_id=2, gpio_pin=1)
 
     def drive(self, vel: int, angular_vel: int) -> None:
         data = [
@@ -66,10 +38,14 @@ class Robot:
             angular_vel & 0xFF,
         ]
 
-        self.bus.write_i2c_block_data(self.STM_ADDR, self.DRIVE_REQUEST, data)
+        response = self.i2c_controller.handle_write(self.STM_ADDR, self.DRIVE_REQUEST, data)
+        if not response["success"]:
+            self.logger.info(response["message"])
 
     def stop(self) -> None:
-        self.bus.write_byte(self.STM_ADDR, self.STOP_REQUEST)
+        response = self.i2c_controller.handle_write(self.STM_ADDR, self.STOP_REQUEST)
+        if not response["success"]:
+            self.logger.info(response["message"])
 
     def drive_dist(self, vel: int, angular_vel: int, drive_time: int) -> None:
         data = [
@@ -91,12 +67,21 @@ class Robot:
             drive_time & 0xFF,
         ]
 
-        self.bus.write_i2c_block_data(self.STM_ADDR, self.DRIVE_TIME_REQUEST, data)
+        response = self.i2c_controller.handle_write(self.STM_ADDR, self.DRIVE_TIME_REQUEST, data)
+        if not response["success"]:
+            self.logger.info(response["message"])
 
         time.sleep(drive_time / 1000)
 
     def get_encoders(self) -> tuple[int, int, int, int]:
-        data = self.bus.read_i2c_block_data(self.STM_ADDR, self.ENCODER_REQUEST, self.ENCODER_LEN)
+        response = self.i2c_controller.handle_read(
+            self.STM_ADDR, self.ENCODER_REQUEST, self.ENCODER_LEN
+        )
+        if not response["success"]:
+            self.logger.info(response["message"])
+            return
+
+        data = response["data"]
 
         fl = int.from_bytes(data[0:4], signed=True)
         fr = int.from_bytes(data[4:8], signed=True)
@@ -107,11 +92,19 @@ class Robot:
         return encoders
 
     def get_side_distance(self) -> int:
-        if self.sidevl53.data_ready:
-            return self.sidevl53.distance
+        dist = self.i2c_controller.read_tof("right")
+        if dist > 0:
+            return dist
         return -1
 
     def get_front_distance(self) -> int:
-        if self.fronttof.data_ready:
-            return self.fronttof.distance
+        dist = self.i2c_controller.read_tof("front")
+        if dist > 0:
+            return dist
+        return -1
+
+    def get_claw_distance(self) -> int:
+        dist = self.i2c_controller.read_tof("claw")
+        if dist > 0:
+            return dist
         return -1

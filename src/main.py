@@ -3,10 +3,7 @@ import logging
 from src.components.robot_logging import setup_logging
 from src.components.oled_controller import OLEDController
 
-logger = setup_logging(
-    log_file="logs/robot.log",
-    level=logging.INFO,
-)
+logger = setup_logging()
 
 
 oled = OLEDController()

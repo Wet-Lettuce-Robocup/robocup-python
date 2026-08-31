@@ -15,10 +15,17 @@ class I2CBusController:
     FRONT_TOF_ADDR = 0x32
     STM_ADDR = 0x67
 
+    STATE_CMD = 0x80
+    ENCODER_REQUEST = 0x82
     ULTRASONIC_CMD = 0x83
     TEMP_CMD = 0x84
-    STATE_CMD = 0x80
     MOVE_TIME_C_CMD = 0x85
+
+    DRIVE_REQUEST = 0x01
+    STOP_REQUEST = 0x02
+    DRIVE_TIME_REQUEST = 0x04
+
+    ENCODER_LEN = 16
 
     def __init__(self) -> None:
         self.logger = logging.getLogger("i2c_controller")

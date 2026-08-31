@@ -17,7 +17,7 @@ def setup_logging(
     :return: Root robot logger.
     """
 
-    logger = logging.getLogger("robot")
+    logger = logging.getLogger("main")
     logger.setLevel(level)
 
     # Prevent duplicate messages if setup_logging() is called again.

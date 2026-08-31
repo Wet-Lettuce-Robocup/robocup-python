@@ -1,9 +1,7 @@
-import logger
+import logging
 import math
-import time
 
 import cv2
-import numpy as np
 from ultralytics import YOLO
 
 from src.components.cameras.front_camera import FrontCamera
@@ -28,7 +26,7 @@ class Vision:
         self.camera = FrontCamera()
 
         self.model = YOLO("src/components/cameras/state.pt")
-        self.logger = logger.getLogger("vision")
+        self.logger = logging.getLogger("vision")
 
         self.debug = True
 
