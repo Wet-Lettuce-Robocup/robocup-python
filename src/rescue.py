@@ -36,6 +36,7 @@ class Rescue:
         self.target_evac_point = None
         self.target_attempts = 0
 
+        self.is_targetting_balls = True
         self.green_found = False
         self.red_found = False
         self.exit_found = False
@@ -112,7 +113,7 @@ class Rescue:
     def scan_for_balls(self):
         silver_found, black_found = self._count_balls()
 
-        if silver_found < 2:
+        if silver_found < 2 and self.target_attempts < 100:
             target_colour = "silver"
             # self.target_ball("silver")
             self.target_attempts += 1
@@ -120,7 +121,8 @@ class Rescue:
             target_colour = "black"
             # self.target_ball("black")
         else:
-            self.logger.error("This case should never happen.")
+            self.logger.error("All balls rescued.")
+            self.is_targetting_balls = False
             return []
 
         ball_positions = self.locate_targets("ball")
@@ -332,7 +334,7 @@ class Rescue:
 
             self.task_started = True
             self.enter_rescue()
-            self.transition_to(Tasks.START_SCAN)
+            self._transition_to(Tasks.START_SCAN)
 
         elif self.current_task == Tasks.START_SCAN:
             # set up scanning for a ball or evac point
@@ -341,35 +343,36 @@ class Rescue:
 
             self.task_started = True
             self.led.set_brightness(30)
-            self.transition_to(Tasks.SCAN)
+            self._transition_to(Tasks.SCAN)
 
         elif self.current_task == Tasks.SCAN:
             # scan for ball or evac point
-            if self.task_started:
-                return
+            first_run = False
+            if not self.task_started:
+                first_run = True
 
             self.task_started = True
 
-            if self.task_started:  # CHANGEE
+            if self.is_targetting_balls:
                 positions = self.scan_for_balls()
                 if not positions:
                     self.target_attempts += 1
                     self.logger.info(f"No target ball found (attempt {self.target_attempts})")
 
-                    self.robot.spin(15)
+                    if first_run:
+                        self.robot.drive(0, 20)
                     return
 
-                self.target_ball = positions[0]
-
-                self.led.set_brightness(0)
                 self.robot.stop_moving()
+
+                self.target_ball = positions[0]
 
                 self.logger.info(
                     f"Targeting {self.target_ball['cls']} ball: "
                     f"{self.target_ball['dist']:.2f}m, "
                     f"{self.target_ball['angle']:.1f}°"
                 )
-                self.transition_to(Tasks.TARGET_BALL)
+                self._transition_to(Tasks.TARGET_BALL)
 
             else:
                 # All balls collected.
@@ -377,21 +380,22 @@ class Rescue:
 
                 if not positions:
                     self.logger.info("No evacuation point found")
-                    self.robot.spin(15)
+
+                    if first_run:
+                        self.robot.drive(0, 20)
                     return
+
+                self.robot.stop_moving()
 
                 self.target_evac_point = positions[0]
 
-                self.led.set_brightness(0)
-                self.robot.stop_moving()
-
                 self.logger.info(f"Targeting {self.target_evac_point['cls']} evacuation point")
-                self.transition_to(Tasks.TARGET_EVAC_POINT)
+                self._transition_to(Tasks.TARGET_EVAC_POINT)
 
         elif self.current_task == Tasks.TARGET_BALL:
             # turn to face a ball
             if self.target_ball is None:
-                self.transition_to(Tasks.SCAN)
+                self._transition_to(Tasks.SCAN)
                 return
             if self.task_started:
                 return
@@ -404,12 +408,12 @@ class Rescue:
             self.tray_handler("release")
 
             self.rotate_to_target(self.target_ball["angle"])
-            self.transition_to(Tasks.APPROACH_BALL)
+            self._transition_to(Tasks.APPROACH_BALL)
 
         elif self.current_task == Tasks.APPROACH_BALL:
             # move to approach a ball
             if self.target_ball is None:
-                self.transition_to(Tasks.SCAN)
+                self._transition_to(Tasks.SCAN)
                 return
             if self.task_started:
                 return
@@ -422,7 +426,7 @@ class Rescue:
             self.logger.info(f"Approaching ball: {approach_distance:.2f}m")
             if approach_distance > 0:
                 self.robot.drive_dist(approach_distance)
-            self.transition_to(Tasks.LIFT_BALL)
+            self._transition_to(Tasks.LIFT_BALL)
 
         elif self.current_task == Tasks.LIFT_BALL:
             # lift up ball and check if legit
@@ -437,7 +441,7 @@ class Rescue:
             if not positions:
                 self.logger.warning("Ball lost during approach")
                 self.target_ball = None
-                self.transition_to(Tasks.SCAN)
+                self._transition_to(Tasks.SCAN)
                 return
 
             self.target_ball = positions[0]
@@ -453,12 +457,12 @@ class Rescue:
 
             self.grab_ball()
 
-            self.transition_to(Tasks.SCAN)
+            self._transition_to(Tasks.SCAN)
 
         elif self.current_task == Tasks.TARGET_EVAC_POINT:
             # turn to face evac point
             if self.target_evac_point is None:
-                self.transition_to(Tasks.SCAN)
+                self._transition_to(Tasks.SCAN)
                 return
             if self.task_started:
                 return
@@ -468,12 +472,12 @@ class Rescue:
             self.logger.info(f"Rotating towards {self.target_evac_point['cls']} evacuation point")
             self.rotate_to_target(self.target_evac_point["angle"])
 
-            self.transition_to(Tasks.APPROACH_EVAC_POINT)
+            self._transition_to(Tasks.APPROACH_EVAC_POINT)
 
         elif self.current_task == Tasks.APPROACH_EVAC_POINT:
             # move to approach evac point
             if self.target_evac_point is None:
-                self.transition_to(Tasks.SCAN)
+                self._transition_to(Tasks.SCAN)
                 return
             if self.task_started:
                 return
@@ -490,7 +494,7 @@ class Rescue:
             if approach_distance > 0:
                 self.robot.drive_dist(approach_distance)
 
-            self.transition_to(Tasks.DUMP_EVAC_POINT)
+            self._transition_to(Tasks.DUMP_EVAC_POINT)
 
         elif self.current_task == Tasks.DUMP_EVAC_POINT:
             # turn and drop balls off at evac point
@@ -503,20 +507,20 @@ class Rescue:
             self.dump_balls()
 
             if self.red_found:
-                self.transition_to(Tasks.LOCATE_EXIT)
+                self._transition_to(Tasks.LOCATE_EXIT)
             else:
-                self.transition_to(Tasks.SCAN)
+                self._transition_to(Tasks.SCAN)
 
         elif self.current_task == Tasks.LOCATE_EXIT:
             # loop to find exit
-            if self.task_started:
-                return
+            if not self.task_started:
+                self.task_started = True
 
-            self.task_started = True
+            self.led.set_brightness(0)
 
             self.locate_exit()
 
-            self.transition_to(Tasks.EXIT)
+            self._transition_to(Tasks.EXIT)
 
         elif self.current_task == Tasks.EXIT:
             # end rescue and start line follow
