@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 
 from src.components.servo_controller import ServoController
@@ -22,7 +23,7 @@ class Robot:
         self.servo_lift = ServoController(self.i2c_controller, servo_id=1, gpio_pin=0)
         self.servo_tray_release = ServoController(self.i2c_controller, servo_id=2, gpio_pin=1)
 
-    def drive(self, vel: int, angular_vel: int) -> None:
+    def drive(self, vel: int = 50, angular_vel: int = 0) -> None:
         data = [
             (vel >> 24) & 0xFF,
             (vel >> 16) & 0xFF,
@@ -42,12 +43,32 @@ class Robot:
         if not response["success"]:
             self.logger.info(response["message"])
 
-    def stop(self) -> None:
+    def stop_moving(self) -> None:
         response = self.i2c_controller.handle_write(self.STM_ADDR, self.STOP_REQUEST)
         if not response["success"]:
             self.logger.info(response["message"])
 
-    def drive_dist(self, vel: int, angular_vel: int, drive_time: int) -> None:
+    def spin(self, angle, velocity: int = 50):
+        self.drive_dist(0, angle, velocity)
+
+    def drive_dist(self, distance, angle=0, velocity: int = 100) -> None:
+        distance *= 500  # To tune
+        angle *= 1.2
+
+        linear_time = abs(distance) / abs(velocity) if velocity != 0 and distance != 0 else 0.0
+        angular_time = abs(angle) / abs(velocity) if velocity != 0 and angle != 0 else 0.0
+        time_required = max(linear_time, angular_time)
+
+        if time_required <= 0.0:
+            self.logger.warning("Ignoring drive called with zero distance and angle")
+            return
+
+        linear_vel = math.copysign(velocity, distance) if distance != 0 else 0.0
+        angular_vel = math.copysign(velocity, angle) if angle != 0 else 0.0
+        vel = float(linear_vel)
+        angular_vel = float(angular_vel)
+        drive_time = float(time_required)
+
         data = [
             (vel >> 24) & 0xFF,
             (vel >> 16) & 0xFF,
@@ -110,6 +131,7 @@ class Robot:
         return -1
 
     def claw(self, action):
+        """Action: "grab" or "release"."""
         if action == "grab":
             self.servo_grab.set_angle(57)
             time.sleep(0.5)
@@ -118,6 +140,7 @@ class Robot:
             time.sleep(0.5)
 
     def lift(self, action):
+        """Action: "up" or "down"."""
         if action == "up":
             self.servo_lift.set_angle(155)
             time.sleep(0.5)
@@ -126,6 +149,7 @@ class Robot:
             time.sleep(0.5)
 
     def tray(self, action):
+        """Action: "release" or "reset"."""
         if action == "release":
             self.servo_tray_release.set_angle(132)
             time.sleep(0.5)
