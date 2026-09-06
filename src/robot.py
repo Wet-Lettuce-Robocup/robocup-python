@@ -65,9 +65,9 @@ class Robot:
 
         linear_vel = math.copysign(velocity, distance) if distance != 0 else 0.0
         angular_vel = math.copysign(velocity, angle) if angle != 0 else 0.0
-        vel = float(linear_vel)
-        angular_vel = float(angular_vel)
-        drive_time = float(time_required)
+        vel = int(linear_vel)
+        angular_vel = int(angular_vel)
+        drive_time = int(time_required)
 
         data = [
             (vel >> 24) & 0xFF,
@@ -113,7 +113,7 @@ class Robot:
         return encoders
 
     def get_side_distance(self) -> int:
-        dist = self.i2c_controller.read_tof("right")
+        dist = self.i2c_controller.read_tof("side")
         if dist > 0:
             return dist
         return -1

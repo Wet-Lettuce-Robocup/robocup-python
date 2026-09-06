@@ -34,7 +34,9 @@ class Rescue:
 
         self.target_ball = None
         self.target_evac_point = None
-        self.target_attempts = 0
+
+        self.silver_timeout = None
+        self.scan_timeout = None
 
         self.is_targetting_balls = True
         self.green_found = False
@@ -82,7 +84,7 @@ class Rescue:
 
         elif action == "grab":
             # fill the claw
-            if current_storage["claw"] is not None:
+            if current_storage["claw"] is None:
                 if colour in ["silver", "black"]:
                     self.ball_storage["claw"] = colour
                 else:
@@ -92,6 +94,9 @@ class Rescue:
 
     def locate_targets(self, target):
         all_objects = self.vision.get_all_objects()
+
+        if all_objects is None:
+            return None
 
         counts = all_objects["counts"]
         detections = all_objects["detections"]
@@ -113,23 +118,27 @@ class Rescue:
     def scan_for_balls(self):
         silver_found, black_found = self._count_balls()
 
-        if silver_found < 2 and self.target_attempts < 100:
+        if silver_found < 2 and time.monotonic() < self.silver_timeout:
             target_colour = "silver"
             # self.target_ball("silver")
-            self.target_attempts += 1
-        elif black_found < 1:
+        elif black_found < 1 and time.monotonic() < self.scan_timeout:
             target_colour = "black"
             # self.target_ball("black")
         else:
-            self.logger.error("All balls rescued.")
+            if time.monotonic() < self.scan_timeout:
+                self.logger.info("Scan timeout reached: no more balls have been detected.")
+            self.logger.info("All balls rescued.")
             self.is_targetting_balls = False
             return []
 
         ball_positions = self.locate_targets("ball")
 
+        if not ball_positions:
+            return []
+
         final_positions = []
         for i in ball_positions.values():
-            if i["cls"] == "target_colour":
+            if i["cls"] == target_colour:
                 final_positions.append(i)
 
         if not final_positions:
@@ -202,6 +211,8 @@ class Rescue:
             self.logger.warning("grab_ball called without a target")
             self._transition_to(Tasks.SCAN)
             return
+
+        self.robot.lift("down")
 
         colour = self.target_ball["cls"]
         self.logger.info(f"Grabbing {colour} ball")
@@ -350,15 +361,16 @@ class Rescue:
             first_run = False
             if not self.task_started:
                 first_run = True
+                # Timeout of 10 seconds if no silver
+                self.silver_timeout = time.monotonic() + 10
+                # Timeout of 20 seconds if no black or silver
+                self.scan_timeout = time.monotonic() + 20
 
             self.task_started = True
 
             if self.is_targetting_balls:
                 positions = self.scan_for_balls()
                 if not positions:
-                    self.target_attempts += 1
-                    self.logger.info(f"No target ball found (attempt {self.target_attempts})")
-
                     if first_run:
                         self.robot.drive(0, 20)
                     return
@@ -516,7 +528,9 @@ class Rescue:
             if not self.task_started:
                 self.task_started = True
 
-            self.led.set_brightness(0)
+                self.led.set_brightness(0)
+
+                self.robot.drive_dist(0.2)
 
             self.locate_exit()
 
@@ -531,6 +545,9 @@ class Rescue:
 
             self.robot.stop_moving()
             self.led.set_brightness(0)
+
+            self.vision.close()
+
             self.logger.info("Rescue complete")
 
         else:

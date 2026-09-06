@@ -11,7 +11,7 @@ from gpiozero import OutputDevice
 
 class I2CBusController:
     CLAW_TOF_ADDR = 0x30
-    RIGHT_TOF_ADDR = 0x31
+    SIDE_TOF_ADDR = 0x31
     FRONT_TOF_ADDR = 0x32
     STM_ADDR = 0x67
 
@@ -40,11 +40,11 @@ class I2CBusController:
         self.i2c_lock = threading.Lock()
 
         self.claw_tof_en = OutputDevice(20, active_high=True, initial_value=False)
-        self.right_tof_en = OutputDevice(19, active_high=True, initial_value=False)
+        self.side_tof_en = OutputDevice(19, active_high=True, initial_value=False)
         self.front_tof_en = OutputDevice(7, active_high=True, initial_value=False)
 
         self.claw_tof_enabled = False
-        self.right_tof_enabled = False
+        self.side_tof_enabled = False
         self.front_tof_enabled = False
 
         self.init_tof()
@@ -73,17 +73,17 @@ class I2CBusController:
                     self.claw_tof_enabled = False
                     self.logger.warning(f"Claw TOF init failed! {e}")
 
-            if not self.right_tof_enabled:
+            if not self.side_tof_enabled:
                 try:
-                    self.right_tof_en.on()
-                    self.right_tof = adafruit_vl53l1x.VL53L1X(self.adafruit_i2c)
-                    self.right_tof.set_address(self.RIGHT_TOF_ADDR)
-                    self.right_tof.start_ranging()
-                    self.right_tof_enabled = True
+                    self.side_tof_en.on()
+                    self.side_tof = adafruit_vl53l1x.VL53L1X(self.adafruit_i2c)
+                    self.side_tof.set_address(self.SIDE_TOF_ADDR)
+                    self.side_tof.start_ranging()
+                    self.side_tof_enabled = True
                 except Exception as e:
-                    self.right_tof_en.off()
-                    self.right_tof_enabled = False
-                    self.logger.warning(f"Right TOF init failed! {e}")
+                    self.side_tof_en.off()
+                    self.side_tof_enabled = False
+                    self.logger.warning(f"Side TOF init failed! {e}")
 
             if not self.front_tof_enabled:
                 try:
@@ -97,7 +97,7 @@ class I2CBusController:
                     self.front_tof_enabled = False
                     self.logger.warning(f"Front TOF init failed! {e}")
 
-            if self.claw_tof_enabled and self.right_tof_enabled and self.front_tof_enabled:
+            if self.claw_tof_enabled and self.side_tof_enabled and self.front_tof_enabled:
                 break
 
     def handle_read(self, device_address, register_address, length):
@@ -236,15 +236,15 @@ class I2CBusController:
                     data = int(front_dist * 10)
 
                 return data
-            if tof_name == "right" and self.right_tof_enabled:
+            if tof_name == "side" and self.side_tof_enabled:
                 try:
-                    right_dist: float | None = self.right_tof.distance
+                    side_dist: float | None = self.side_tof.distance
                 except OSError:
-                    right_dist = None
+                    side_dist = None
 
-                if right_dist is None:
+                if side_dist is None:
                     data = -1
                 else:
-                    data = int(right_dist * 10)
+                    data = int(side_dist * 10)
 
                 return data

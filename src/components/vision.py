@@ -75,6 +75,8 @@ class Vision:
 
                 if class_name not in counts:
                     self.logger.warning(f"Unknown class detected: {class_name}")
+                else:
+                    counts[class_name] += 1
 
                 data = {
                     "cls": class_name,
@@ -85,7 +87,6 @@ class Vision:
                     "conf": float(conf),
                 }
 
-                counts[class_name] += 1
                 all_detections.update({len(all_detections): data})
 
         return {"detections": all_detections, "counts": counts}
@@ -149,3 +150,6 @@ class Vision:
             })
 
         return current_data
+
+    def close(self):
+        self.camera.close()
