@@ -87,7 +87,7 @@ class Vision:
 
         return filtered_detections
 
-    def get_pos(self, data):
+    def get_positions(self, data):
         current_data = {}
 
         for object in data.values():

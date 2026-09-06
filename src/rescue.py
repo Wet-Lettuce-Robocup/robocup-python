@@ -1,3 +1,4 @@
+import logging
 import time
 
 from src.components.vision import Vision
@@ -5,30 +6,41 @@ from src.robot import Robot
 
 
 class Rescue:
-    def __init__(self):
-        self.robot = Robot()
+    def __init__(self, i2c_controller):
+        self.logger = logging.getLogger("rescue")
+
+        self.i2c_controller = i2c_controller
+        self.robot = Robot(self.i2c_controller)
         self.vision = Vision()
 
-    def claw(self, action):
-        if action == "grab":
-            self.robot.servo_grab.move_angle(57)
-            time.sleep(0.5)
-        elif action == "release":
-            self.robot.servo_grab.move_angle(29)
-            time.sleep(0.5)
+        self.ball_positions = {}
+        self.evac_positions = {}
 
-    def lift(self, action):
-        if action == "up":
-            self.robot.servo_lift.move_angle(155)
-            time.sleep(0.5)
-        elif action == "down":
-            self.robot.servo_lift.move_angle(23)
-            time.sleep(0.5)
+    def tick_rescue(self):
+        pass
 
-    def tray(self, action):
-        if action == "release":
-            self.robot.servo_tray_release.move_angle(132)
-            time.sleep(0.5)
-        elif action == "reset":
-            self.robot.servo_tray_release.move_angle(46)
-            time.sleep(0.5)
+    def locate_targets(self, target):
+        all_objects = self.vision.get_all_objects()
+
+        counts = all_objects["counts"]
+        detections = all_objects["detections"]
+
+        if target == "ball" and counts["silver"] == 0 and counts["black"] == 0:
+            return
+        if target == "evac_point" and counts["green"] == 0 and counts["red"] == 0:
+            return
+
+        target_objects = self.vision.filter_objects(detections, target)
+
+        if len(target_objects) == 0:
+            return
+
+        target_positions = self.vision.get_positions(target_objects)
+
+        return target_positions
+
+    def target_ball(self):
+        self.ball_positions = self.locate_targets("ball")
+
+    def target_evac_points(self):
+        self.evac_positions = self.locate_targets("evac_point")

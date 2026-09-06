@@ -108,3 +108,27 @@ class Robot:
         if dist > 0:
             return dist
         return -1
+
+    def claw(self, action):
+        if action == "grab":
+            self.servo_grab.set_angle(57)
+            time.sleep(0.5)
+        elif action == "release":
+            self.servo_grab.set_angle(29)
+            time.sleep(0.5)
+
+    def lift(self, action):
+        if action == "up":
+            self.servo_lift.set_angle(155)
+            time.sleep(0.5)
+        elif action == "down":
+            self.servo_lift.set_angle(23)
+            time.sleep(0.5)
+
+    def tray(self, action):
+        if action == "release":
+            self.servo_tray_release.set_angle(132)
+            time.sleep(0.5)
+        elif action == "reset":
+            self.servo_tray_release.set_angle(46)
+            time.sleep(0.5)
