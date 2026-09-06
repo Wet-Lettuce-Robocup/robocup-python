@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from enum import Enum
 
 from gpiozero import Button
@@ -44,15 +45,35 @@ class Main:
         self.current_task = Task.INIT
         self.task_started = False
 
+        self.rescue_thread = None
+        self.follow_thread = None
+
     def _transition_to(self, task):
-        """Change to a new rescue task."""
         self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
+
         self.current_task = task
         self.task_started = False
 
     def _on_pressed(self):
-        self.stop_event.set()
-        self.stop()
+        """Called automatically when the button is pressed."""
+
+        self.logger.info("Button pressed")
+
+        # If something is currently running, stop it
+        if self.current_task == Task.RESCUE:
+            self.logger.info("Stopping rescue")
+            self.robot.stop()
+            self.stop_event.set()
+
+        elif self.current_task == Task.FOLLOW:
+            self.logger.info("Stopping line follow")
+            self.robot.stop()
+            self.stop_event.set()
+
+        # If in idle, start line following.
+        elif self.current_task == Task.IDLE:
+            self.logger.info("Starting line follow")
+            self._transition_to(Task.FOLLOW)
 
     def reset_stop(self):
         self.stop_event.clear()
@@ -67,19 +88,71 @@ class Main:
         while True:
             if self.current_task == Task.INIT:
                 if self.task_started:
-                    return
+                    time.sleep(0.01)
+                    continue
+
                 self.task_started = True
                 self._transition_to(Task.IDLE)
+
             elif self.current_task == Task.IDLE:
-                self.robot.reset_stop()
-                rescue_thread = threading.Thread(target=self.rescue, daemon=True)
+                time.sleep(0.01)
 
-                rescue_thread.start()
+            elif self.current_task == Task.RESCUE:
+                if not self.task_started:
+                    self.task_started = True
+                    self.reset_stop()
 
-    def rescue(self):
-        while not self.robot.stop_event.is_set():
-            pass
+                    self.rescue_thread = threading.Thread(target=self.rescue_loop, daemon=True)
 
-    def follow(self):
-        while not self.robot.stop_event.is_set():
-            pass
+                    self.rescue_thread.start()
+
+                # Check whether rescue has finished
+                elif not self.rescue_thread.is_alive():
+                    if self.rescue.is_finished():
+                        self.logger.info("Rescue finished")
+                        self._transition_to(Task.FOLLOW)
+                    else:
+                        self._transition_to(Task.IDLE)
+
+                time.sleep(0.01)
+
+            elif self.current_task == Task.FOLLOW:
+                if not self.task_started:
+                    self.task_started = True
+                    self.reset_stop()
+
+                    self.follow_thread = threading.Thread(target=self.follow_loop, daemon=True)
+
+                    self.follow_thread.start()
+
+                if not self.follow_thread.is_alive():
+                    if self.follow.is_finished():
+                        self.logger.info("Line follow finished")
+                        self._transition_to(Task.RESCUE)
+                    else:
+                        self._transition_to(Task.IDLE)
+
+                time.sleep(0.01)
+
+    def rescue_loop(self):
+
+        while not self.stop_event.is_set():
+            self.rescue.tick_rescue()
+            # rescue code
+
+            time.sleep(0.01)
+
+        self.robot.stop()
+
+        self.logger.info("Rescue stopped")
+
+    def follow_loop(self):
+
+        while not self.stop_event.is_set():
+            # line follow code
+
+            time.sleep(0.01)
+
+        self.robot.stop()
+
+        self.logger.info("Line follow stopped")

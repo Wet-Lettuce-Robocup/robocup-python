@@ -136,6 +136,52 @@ class Follow:
             pass
         self.robot.stop_moving()
 
+    def red_detected(image, processed):
+        # Convert BGR image to HSV
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        # Red has two ranges in HSV because hue wraps around at 180
+        mask1 = cv2.inRange(hsv, np.array([0, 100, 100]), np.array([10, 255, 255]))
+
+        mask2 = cv2.inRange(hsv, np.array([170, 100, 100]), np.array([180, 255, 255]))
+
+        # Combine both red masks
+        red_mask = mask1 | mask2
+
+        # Create 5x5 rectangular kernel
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+
+        # Morphological opening
+        red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel)
+
+        # Find external contours
+        contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        min_red_area = 500.0
+        red_detected = False
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+
+            if area < min_red_area:
+                continue
+
+            red_detected = True
+
+            # Draw filled red contour onto processed image
+            cv2.drawContours(
+                processed,
+                [contour],
+                -1,
+                (0, 0, 255),  # BGR = red
+                thickness=cv2.FILLED,
+            )
+
+        return red_detected
+
+    def is_finished(self):
+        return not self.follow_active
+
     def main(self):
         while self.follow_active:
             if self.robot.limit_switch_pressed():
@@ -147,6 +193,9 @@ class Follow:
     def loop(self):
         self.loops += 1
         self.lastDistance = self.distance
+
+        if self.red_detected(0):
+            self.follow_active = False
 
         # error calc
         angle = self.follow()
