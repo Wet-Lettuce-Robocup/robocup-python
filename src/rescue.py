@@ -4,7 +4,6 @@ import time
 
 from src.components.vision import Vision
 from src.components.front_led_controller import LEDController
-from src.robot import Robot
 
 
 class Tasks(Enum):
@@ -22,11 +21,11 @@ class Tasks(Enum):
 
 
 class Rescue:
-    def __init__(self, i2c_controller):
+    def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("rescue")
 
         self.i2c_controller = i2c_controller
-        self.robot = Robot(self.i2c_controller)
+        self.robot = robot
         self.vision = Vision()
         self.led = LEDController()
 

@@ -2,6 +2,8 @@ import logging
 import math
 import time
 
+from gpiozero import Button
+
 from src.components.servo_controller import ServoController
 
 
@@ -22,6 +24,12 @@ class Robot:
         self.servo_grab = ServoController(self.i2c_controller, servo_id=0, gpio_pin=4)
         self.servo_lift = ServoController(self.i2c_controller, servo_id=1, gpio_pin=0)
         self.servo_tray_release = ServoController(self.i2c_controller, servo_id=2, gpio_pin=1)
+
+        self.limit_switch = Button(27, pull_up=False)
+
+        self.limit_switch_triggered = False
+
+        self.limit_switch.when_pressed = self._limit_switch_was_pressed
 
     def drive(self, vel: int = 50, angular_vel: int = 0) -> None:
         data = [
@@ -156,3 +164,14 @@ class Robot:
         elif action == "reset":
             self.servo_tray_release.set_angle(46)
             time.sleep(0.5)
+
+    def limit_switch_pressed(self):
+        """Returns True if limit switch is pressed in that moment."""
+        return self.limit_switch.is_pressed
+
+    def _limit_switch_was_pressed(self):
+        """Check if limit switch was pressed after last reset (for rescue, may not use)"""
+        self.limit_switch_triggered = True
+
+    def reset_limit_switch(self):
+        self.limit_switch_triggered = False
