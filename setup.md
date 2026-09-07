@@ -59,11 +59,20 @@ Clone the repository:
 ```zsh
 git clone https://github.com/Wet-Lettuce-Robocup/robocup-python.git
 ```
-(Make sure that the right branche is checked out)
+(Make sure that the right branch is checked out)
 
-Install final dependencies:
+Set up custom PWM device tree:
 ```zsh
 cd device_tree
 ./install.sh
 cd ..
+```
+
+Create venv:
+```zsh
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install ultralytics opencv-python adafruit-circuitpython-vl53l1x
+
 ```

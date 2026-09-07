@@ -1,10 +1,19 @@
-import cv2
 import logging
 import math
-import numpy as np
 import time
+from enum import Enum
+
+import cv2
+import numpy as np
 
 from src.components.cameras.front_camera import FrontCamera
+
+
+class Task(Enum):
+    INIT = 1
+    FOLLOW = 2
+    TOWER = 3
+    RESCUE = 4
 
 
 class Follow:
@@ -17,7 +26,8 @@ class Follow:
         self.robot = robot
         self.camera = FrontCamera()
 
-        self.frame = None
+        self.raw_frame = None
+        self.cropped_frame = None
 
         self.lastError = 0
         self.pastErrors = 0
@@ -25,29 +35,35 @@ class Follow:
         self.loops = 0
         self.startTime = time.monotonic()
 
-        self.follow_active = True
+        self.follow_status = Task.INIT
+        self.task_started = False
 
-    def follow(self) -> float:
+    def _transition_to(self, task):
+        self.logger.info(f"Task: {self.follow_statuss.name} -> {task.name}")
+
+        self.follow_status = task
+        self.task_started = False
+
+    def follow(self, frame) -> float:
         """2025 line follow code"""
-        self.frame = self.camera.get_frame()
 
         # Check if frame is valid
-        if self.frame is None:
-            self.logger.warning("get_frame returned None")
+        if frame is None:
+            self.logger.warning("Not a valid frame")
             return 0.0
 
-        self.img = np.copy(self.frame)
-        self.green = self.getGreen()
+        self.img = np.copy(frame)
+        # self.green = self.getGreen()
 
         self.roi = self.frame[0:360, 0 : self.frameWidth]
         self.line = cv2.inRange(self.roi, (0, 0, 0), (60, 60, 60))  # Black threshold
 
-        greenROI = self.green[0 : len(self.roi), 0 : self.frameWidth]
+        # greenROI = self.green[0 : len(self.roi), 0 : self.frameWidth]
         green_weight = 2
-        weighted_combined_mask = cv2.addWeighted(greenROI, green_weight, self.line, 1, 0)
-        combined_mask = (weighted_combined_mask > 0).astype(np.uint8) * 255
+        # weighted_combined_mask = cv2.addWeighted(greenROI, green_weight, self.line, 1, 0)
+        # combined_mask = (weighted_combined_mask > 0).astype(np.uint8) * 255
 
-        self.line = cv2.bitwise_and(self.roi, self.roi, mask=combined_mask)
+        # self.line = cv2.bitwise_and(self.roi, self.roi, mask=combined_mask)
 
         if len(self.line.shape) == 3:
             self.line = cv2.cvtColor(self.line, cv2.COLOR_BGR2GRAY)
@@ -67,26 +83,26 @@ class Follow:
         self.xPos = int(m["m10"] / m["m00"])
         self.yPos = int(m["m01"] / m["m00"])
 
-        greenContours = cv2.findContours(greenROI, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-        if len(greenContours) > 0:
-            largestContourGreen = max(greenContours, key=cv2.contourArea)
-            mGreen = cv2.moments(largestContourGreen)
-            if mGreen["m00"] != 0:
-                self.xPosGreen = int(mGreen["m10"] / mGreen["m00"])
-                self.yPosGreen = int(mGreen["m01"] / mGreen["m00"])
-            else:
-                self.xPosGreen = 0
-                self.yPosGreen = 0
-        else:
-            largestContourGreen = None
+        # greenContours = cv2.findContours(greenROI, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+        # if len(greenContours) > 0:
+        #     largestContourGreen = max(greenContours, key=cv2.contourArea)
+        #     mGreen = cv2.moments(largestContourGreen)
+        #     if mGreen["m00"] != 0:
+        #         self.xPosGreen = int(mGreen["m10"] / mGreen["m00"])
+        #         self.yPosGreen = int(mGreen["m01"] / mGreen["m00"])
+        #     else:
+        #         self.xPosGreen = 0
+        #         self.yPosGreen = 0
+        # else:
+        #     largestContourGreen = None
 
         # Average green and line COM
-        if largestContourGreen is not None and cv2.contourArea(largestContourGreen) > 1000:
-            self.xPos = int((self.xPos + self.xPosGreen) / 2)
-            self.yPos = int((self.yPos + self.yPosGreen) / 2)
-        else:
-            self.xPosGreen = 0
-            self.yPosGreen = 0
+        # if largestContourGreen is not None and cv2.contourArea(largestContourGreen) > 1000:
+        #     self.xPos = int((self.xPos + self.xPosGreen) / 2)
+        #     self.yPos = int((self.yPos + self.yPosGreen) / 2)
+        # else:
+        #     self.xPosGreen = 0
+        #     self.yPosGreen = 0
 
         # REMOVE THIS LATER ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         # if len(lineContours) > 0:
@@ -120,23 +136,15 @@ class Follow:
         return linePos
 
     def lineInFrame(self) -> bool:
-        self.frame = self.camera.get_frame()
+        frame = self.cropped_frame
 
-        if self.frame is None:
+        if frame is None:
             return False
 
         line = cv2.inRange(self.img, (0, 0, 0), (45, 45, 45))
         return cv2.countNonZero(line) > 5000
 
-    def water_tower(self):
-        self.robot.spin(90)
-        self.robot.drive_dist(30, -10, 40)  # to tune
-        self.robot.drive(20)
-        while not self.lineInFrame():
-            pass
-        self.robot.stop_moving()
-
-    def red_detected(image, processed):
+    def red_detected(self, image, processed):
         # Convert BGR image to HSV
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
@@ -179,27 +187,45 @@ class Follow:
 
         return red_detected
 
-    def is_finished(self):
-        return not self.follow_active
-
     def main(self):
-        while self.follow_active:
-            if self.robot.limit_switch_pressed():
+        if self.robot.limit_switch_pressed():
+            self.robot.stop_moving()
+            self._transition_to(Task.TOWER)
+
+        elif self.follow_status == Task.TOWER:
+            if not self.task_started:
+                self.task_started = True
+
+                self.robot.spin(90)
+                self.robot.drive_dist(30, -10, 40)  # to tune
+                self.robot.drive(20)
+
+            if self.lineInFrame():
                 self.robot.stop_moving()
-                self.water_tower()
-            else:
-                self.loop()
+                self._transition_to(Task.FOLLOW)
 
-    def loop(self):
-        self.loops += 1
-        self.lastDistance = self.distance
+        elif self.follow_status == Task.FOLLOW:
+            self.raw_frame, self.cropped_frame = self.camera.get_frame()
+            frame = self.cropped_frame
 
-        if self.red_detected(0):
-            self.follow_active = False
+            self.loops += 1
+            self.lastDistance = self.distance
 
-        # error calc
-        angle = self.follow()
+            if self.red_detected(frame, self.raw_frame):
+                self._transition_to(Task.RESCUE)
+                return
 
-        # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
+            # error calc
+            angle = self.follow(frame)
 
-        self.robot.drive(self.VELOCITY, angle)
+            # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
+
+            self.robot.drive(self.VELOCITY, angle)
+
+        elif self.follow_status == Task.INIT:
+            if not self.task_started:
+                self._transition_to(Task.FOLLOW)
+                self.task_started = True
+
+    def is_finished(self):
+        return self.follow_status == Task.RESCUE
