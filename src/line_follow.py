@@ -18,6 +18,7 @@ class Task(Enum):
 
 class Follow:
     VELOCITY = 50
+    MIN_RED_AREA = 500.0
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("line_follow")
@@ -29,10 +30,6 @@ class Follow:
         self.raw_frame = None
         self.cropped_frame = None
 
-        self.lastError = 0
-        self.pastErrors = 0
-        self.distance = 0
-        self.loops = 0
         self.startTime = time.monotonic()
 
         self.follow_status = Task.INIT
@@ -144,16 +141,12 @@ class Follow:
         line = cv2.inRange(self.img, (0, 0, 0), (45, 45, 45))
         return cv2.countNonZero(line) > 5000
 
-    def red_detected(self, image, processed):
-        # Convert BGR image to HSV
+    def red_detected(self, image):
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         # Red has two ranges in HSV because hue wraps around at 180
         mask1 = cv2.inRange(hsv, np.array([0, 100, 100]), np.array([10, 255, 255]))
-
         mask2 = cv2.inRange(hsv, np.array([170, 100, 100]), np.array([180, 255, 255]))
-
-        # Combine both red masks
         red_mask = mask1 | mask2
 
         # Create 5x5 rectangular kernel
@@ -165,25 +158,15 @@ class Follow:
         # Find external contours
         contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        min_red_area = 500.0
         red_detected = False
 
         for contour in contours:
             area = cv2.contourArea(contour)
 
-            if area < min_red_area:
+            if area < self.MIN_RED_AREA:
                 continue
 
             red_detected = True
-
-            # Draw filled red contour onto processed image
-            cv2.drawContours(
-                processed,
-                [contour],
-                -1,
-                (0, 0, 255),  # BGR = red
-                thickness=cv2.FILLED,
-            )
 
         return red_detected
 
@@ -208,10 +191,7 @@ class Follow:
             self.raw_frame, self.cropped_frame = self.camera.get_frame()
             frame = self.cropped_frame
 
-            self.loops += 1
-            self.lastDistance = self.distance
-
-            if self.red_detected(frame, self.raw_frame):
+            if self.red_detected(frame):
                 self._transition_to(Task.RESCUE)
                 return
 
