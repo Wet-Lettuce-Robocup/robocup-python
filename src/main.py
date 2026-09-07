@@ -21,6 +21,9 @@ class Task(Enum):
 
 
 class Main:
+    RESCUE_LOOPS_PER_SECOND = 10
+    FOLLOW_LOOPS_PER_SECOND = 20
+
     def __init__(self):
 
         self.logger = setup_logging()
@@ -47,6 +50,9 @@ class Main:
 
         self.rescue_thread = None
         self.follow_thread = None
+
+        self.target_rescue_loop_time = None
+        self.target_line_follow_loop_time = None
 
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
@@ -86,73 +92,80 @@ class Main:
         self.logger.error("test error")
 
         while True:
-            if self.current_task == Task.INIT:
-                if self.task_started:
+            try:
+                if self.current_task == Task.INIT:
+                    if self.task_started:
+                        time.sleep(0.01)
+                        continue
+
+                    self.task_started = True
+                    self._transition_to(Task.IDLE)
+
+                elif self.current_task == Task.IDLE:
                     time.sleep(0.01)
-                    continue
 
-                self.task_started = True
-                self._transition_to(Task.IDLE)
+                elif self.current_task == Task.RESCUE:
+                    if not self.task_started:
+                        self.task_started = True
+                        self.reset_stop()
 
-            elif self.current_task == Task.IDLE:
-                time.sleep(0.01)
+                        self.rescue_thread = threading.Thread(target=self.rescue_loop, daemon=True)
 
-            elif self.current_task == Task.RESCUE:
-                if not self.task_started:
-                    self.task_started = True
-                    self.reset_stop()
+                        self.rescue_thread.start()
 
-                    self.rescue_thread = threading.Thread(target=self.rescue_loop, daemon=True)
+                    # Check whether rescue has finished
+                    elif not self.rescue_thread.is_alive():
+                        if self.rescue.is_finished():
+                            self.logger.info("Rescue finished")
+                            self._transition_to(Task.FOLLOW)
+                        else:
+                            self._transition_to(Task.IDLE)
 
-                    self.rescue_thread.start()
+                    time.sleep(0.01)
 
-                # Check whether rescue has finished
-                elif not self.rescue_thread.is_alive():
-                    if self.rescue.is_finished():
-                        self.logger.info("Rescue finished")
-                        self._transition_to(Task.FOLLOW)
-                    else:
-                        self._transition_to(Task.IDLE)
+                elif self.current_task == Task.FOLLOW:
+                    if not self.task_started:
+                        self.task_started = True
+                        self.reset_stop()
 
-                time.sleep(0.01)
+                        self.follow_thread = threading.Thread(target=self.follow_loop, daemon=True)
 
-            elif self.current_task == Task.FOLLOW:
-                if not self.task_started:
-                    self.task_started = True
-                    self.reset_stop()
+                        self.follow_thread.start()
 
-                    self.follow_thread = threading.Thread(target=self.follow_loop, daemon=True)
+                    if not self.follow_thread.is_alive():
+                        if self.follow.is_finished():
+                            self.logger.info("Line follow finished")
+                            self._transition_to(Task.RESCUE)
+                        else:
+                            self._transition_to(Task.IDLE)
 
-                    self.follow_thread.start()
+                    time.sleep(0.01)
 
-                if not self.follow_thread.is_alive():
-                    if self.follow.is_finished():
-                        self.logger.info("Line follow finished")
-                        self._transition_to(Task.RESCUE)
-                    else:
-                        self._transition_to(Task.IDLE)
-
-                time.sleep(0.01)
+            except Exception as e:
+                self.logger.error(f"Caught an error in main loop! {e}")
 
     def rescue_loop(self):
-
         while not self.stop_event.is_set():
-            self.rescue.tick_rescue()
-            # rescue code
+            self.target_rescue_loop_time = time.monotonic() + (1 / self.RESCUE_LOOPS_PER_SECOND)
 
-            time.sleep(0.01)
+            self.rescue.tick_rescue()
+
+            now = time.monotonic()
+            if now < self.target_rescue_loop_time:
+                time.sleep(self.target_rescue_loop_time - now)
 
         self.robot.stop()
-
         self.logger.info("Rescue stopped")
 
     def follow_loop(self):
-
         while not self.stop_event.is_set():
-            # line follow code
+            self.target_follow_loop_time = time.monotonic() + (1 / self.FOLLOW_LOOPS_PER_SECOND)
 
-            time.sleep(0.01)
+            self.follow.main()
+
+            now = time.monotonic()
+            if now < self.target_follow_loop_time:
+                time.sleep(self.target_follow_loop_time - now)
 
         self.robot.stop()
-
         self.logger.info("Line follow stopped")

@@ -202,6 +202,8 @@ class Follow:
 
             self.robot.drive(self.VELOCITY, angle)
 
+            # add a check if the frame is the same for like 3 seconds -> robot is stuck so reverse a bit
+
         elif self.follow_status == Task.INIT:
             if not self.task_started:
                 self._transition_to(Task.FOLLOW)
