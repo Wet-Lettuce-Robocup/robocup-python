@@ -1,6 +1,6 @@
 import logging
 
-from src.components.pwm_controller import PWMController
+from components.pwm_controller import PWMController
 
 
 class LEDController:

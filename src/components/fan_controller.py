@@ -1,10 +1,11 @@
 import logging
+import time
 from math import isclose
 from pathlib import Path
-import time
 
 from gpiozero import DigitalInputDevice
-from src.components.pwm_controller import PWMController
+
+from components.pwm_controller import PWMController
 
 
 class FanController:

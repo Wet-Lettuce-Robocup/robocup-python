@@ -5,12 +5,12 @@ from enum import Enum
 
 from gpiozero import Button
 
-from src.components.i2c_controller import I2CBusController
-from src.components.oled_controller import OLEDController
-from src.components.robot_logging import setup_logging
-from src.line_follow import Follow
-from src.rescue import Rescue
-from src.robot import Robot
+from components.i2c_controller import I2CBusController
+from components.oled_controller import OLEDController
+from components.robot_logging import setup_logging
+from line_follow import Follow
+from rescue import Rescue
+from robot import Robot
 
 
 class Task(Enum):

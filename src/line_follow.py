@@ -7,7 +7,7 @@ from enum import Enum
 import cv2
 import numpy as np
 
-from src.components.cameras.front_camera import FrontCamera
+from components.cameras.front_camera import FrontCamera
 
 
 class Task(Enum):

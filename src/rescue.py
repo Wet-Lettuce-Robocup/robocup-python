@@ -2,8 +2,8 @@ from enum import Enum
 import logging
 import time
 
-from src.components.vision import Vision
-from src.components.front_led_controller import LEDController
+from components.vision import Vision
+from components.front_led_controller import LEDController
 
 
 class Task(Enum):

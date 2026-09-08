@@ -4,7 +4,7 @@ import math
 import cv2
 from ultralytics import YOLO
 
-from src.components.cameras.front_camera import FrontCamera
+from components.cameras.front_camera import FrontCamera
 
 
 class Vision:

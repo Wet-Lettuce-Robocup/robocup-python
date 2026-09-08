@@ -4,7 +4,7 @@ import time
 
 from gpiozero import Button
 
-from src.components.servo_controller import ServoController
+from components.servo_controller import ServoController
 
 
 class Robot:
