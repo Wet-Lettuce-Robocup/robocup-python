@@ -153,3 +153,4 @@ class Vision:
 
     def close(self):
         self.camera.close()
+        cv2.destroyAllWindows()

@@ -86,7 +86,7 @@ class Follow:
     SAME_FRAME_THRESHOLD = 1.5
 
     def __init__(self, i2c_controller, robot):
-        self.logger = logging.getLogger("line_follow")
+        self.logger = logging.getLogger("robot.line_follow")
 
         self.i2c_controller = i2c_controller
         self.robot = robot
@@ -976,3 +976,6 @@ class Follow:
 
     def is_finished(self):
         return self.follow_status == Task.RESCUE
+
+    def exit(self):
+        cv2.destroyAllWindows()

@@ -20,7 +20,7 @@ class ServoController:
         gpio_pin: int = 1,
     ) -> None:
 
-        self.logger = logging.getLogger("servo_controller")
+        self.logger = logging.getLogger("robot.servo_controller")
 
         self.i2c_controller = i2c_controller
 

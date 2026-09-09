@@ -22,7 +22,7 @@ class Task(Enum):
 
 class Rescue:
     def __init__(self, i2c_controller, robot):
-        self.logger = logging.getLogger("rescue")
+        self.logger = logging.getLogger("robot.rescue")
 
         self.i2c_controller = i2c_controller
         self.robot = robot
@@ -545,8 +545,6 @@ class Rescue:
             self.robot.stop_moving()
             self.led.set_brightness(0)
 
-            self.vision.close()
-
             self.logger.info("Rescue complete")
 
         else:
@@ -555,3 +553,6 @@ class Rescue:
     def is_finished(self):
         """Return True when rescue has completed."""
         return self.current_task == Task.EXIT
+
+    def exit(self):
+        self.vision.close()

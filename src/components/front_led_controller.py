@@ -8,7 +8,7 @@ class LEDController:
     PERIOD = 100000
 
     def __init__(self) -> None:
-        self.logger = logging.getLogger("front_led_controller")
+        self.logger = logging.getLogger("robot.front_led_controller")
 
         self.pwm_controller = PWMController(pwm_channel=self.PWM_CHANNEL)
         self.target_brightness = 0

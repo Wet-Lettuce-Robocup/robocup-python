@@ -28,7 +28,7 @@ class I2CBusController:
     ENCODER_LEN = 16
 
     def __init__(self) -> None:
-        self.logger = logging.getLogger("i2c_controller")
+        self.logger = logging.getLogger("robot.i2c")
 
         try:
             self.bus = SMBus(1)

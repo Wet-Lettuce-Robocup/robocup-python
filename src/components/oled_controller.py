@@ -31,7 +31,7 @@ class OLEDLogHandler(logging.Handler):
 
 class OLEDController:
     def __init__(self):
-        self.logger = logging.getLogger("oled_controller")
+        self.logger = logging.getLogger("robot.oled_controller")
 
         self.device: ssd1306 | None = None
         self.serial: i2c | None = None

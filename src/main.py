@@ -3,7 +3,6 @@ import threading
 import time
 from enum import Enum
 
-from components import i2c_controller
 from gpiozero import Button
 
 from components.i2c_controller import I2CBusController
@@ -154,7 +153,7 @@ class Main:
                 time.sleep(self.target_rescue_loop_time - now)
 
         self.robot.stop_moving()
-        self.rescue.led.set_brightness(0)
+        self.rescue.exit()
         self.logger.info("Rescue stopped")
 
     def follow_loop(self):
@@ -168,6 +167,7 @@ class Main:
                 time.sleep(self.target_follow_loop_time - now)
 
         self.robot.stop_moving()
+        self.follow.exit()
         self.logger.info("Line follow stopped")
 
     def cleanup(self):

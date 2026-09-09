@@ -28,7 +28,7 @@ class FanController:
     HIGH_TEMP, HIGH_SPEED = 70, 100
 
     def __init__(self) -> None:
-        self.logger = logging.getLogger("fan_controller")
+        self.logger = logging.getLogger("robot.fan_controller")
 
         self.last_auto_speed = 0
         self.auto_enabled = True

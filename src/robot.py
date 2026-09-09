@@ -17,7 +17,7 @@ class Robot:
 
     def __init__(self, i2c_controller) -> None:
 
-        self.logger = logging.getLogger("robot")
+        self.logger = logging.getLogger("robot.system")
 
         self.i2c_controller = i2c_controller
 
