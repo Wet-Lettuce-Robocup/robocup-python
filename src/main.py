@@ -176,14 +176,16 @@ if __name__ == "__main__":
     try:
         runtime = Main()
         i2c = runtime.i2c_controller
+        r = runtime.robot
+        button = runtime.button
         runtime.main()
     except KeyboardInterrupt:
         pass
     finally:
-        if runtime:
-            if runtime.robot:
-                runtime.robot.stop()
-            runtime.button.close()
+        if r:
+            r.stop()
+        if button:
+            button.close()
         if i2c:
             i2c.front_tof_en.close()
             i2c.side_tof_en.close()
