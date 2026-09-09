@@ -58,7 +58,7 @@ class Follow:
     MIN_RED_AREA = 500.0
 
     WIDTH = 240
-    HEIGHT = 135
+    HEIGHT = 134
 
     BLUR_SIZE = 5
     MORPH_CLOSE_SIZE = 5
@@ -504,8 +504,8 @@ class Follow:
         vertical = []
 
         if lines is not None:
-            for line in lines[:, 0]:
-                x1, y1, x2, y2 = map(int, line)
+            for line in lines:
+                x1, y1, x2, y2 = map(int, line[0])
 
                 dx = x2 - x1
                 dy = y2 - y1
