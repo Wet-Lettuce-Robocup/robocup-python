@@ -31,7 +31,7 @@ class Vision:
 
         self.camera = FrontCamera()
 
-        self.model = YOLO("src/components/cameras/state.pt")
+        self.model = YOLO("components/cameras/state.pt")
 
         self.debug = debug
 
