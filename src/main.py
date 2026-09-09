@@ -89,9 +89,6 @@ class Main:
 
         self.logger.info("Robot started")
 
-        self.logger.warning("test warning")
-        self.logger.error("test error")
-
         while True:
             try:
                 if self.current_task == Task.INIT:

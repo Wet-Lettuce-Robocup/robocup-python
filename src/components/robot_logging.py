@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 
 
@@ -26,7 +27,7 @@ def setup_logging(
 
     formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        datefmt="%H:%M:%S",
     )
 
     # Terminal output.
@@ -37,6 +38,49 @@ def setup_logging(
     # File output.
     log_path = Path(log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if log_path.exists():
+        try:
+            with log_path.open("r", encoding="utf-8") as file:
+                first_line = file.readline().strip()
+
+            if first_line.startswith("Created: "):
+                timestamp_string = first_line.removeprefix("Created: ")
+                created = datetime.strptime(
+                    timestamp_string,
+                    "%Y-%m-%d %H:%M:%S",
+                )
+
+                archive_name = (
+                    f"{log_path.stem}_{created.strftime('%Y%m%d_%H%M%S')}{log_path.suffix}"
+                )
+            else:
+                # Fallback if the timestamp is invalid
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                archive_name = f"{log_path.stem}_{timestamp}{log_path.suffix}"
+
+            archive_path = log_path.with_name(archive_name)
+
+            # Avoid overwriting existing logs
+            counter = 1
+            while archive_path.exists():
+                archive_path = log_path.with_name(
+                    f"{log_path.stem}_{created.strftime('%Y%m%d_%H%M%S')}"
+                    f"_{counter}{log_path.suffix}"
+                )
+                counter += 1
+
+            log_path.rename(archive_path)
+
+        except (OSError, ValueError):
+            # If the old log cannot be read/renamed, continue and let FileHandler add onto the latest log
+            pass
+
+    # Create the new latest.log and add its timestamp
+    created = datetime.now()
+
+    with log_path.open("w", encoding="utf-8") as file:
+        file.write(f"Created: {created.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(level)
