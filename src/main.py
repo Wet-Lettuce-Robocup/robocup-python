@@ -169,3 +169,13 @@ class Main:
 
         self.robot.stop()
         self.logger.info("Line follow stopped")
+
+
+if __name__ == "__main__":
+    try:
+        runtime = Main()
+        runtime.main()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        runtime.robot.stop()

@@ -73,6 +73,6 @@ Create venv:
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip install ultralytics opencv-python adafruit-circuitpython-vl53l1x
+pip install ultralytics opencv-python adafruit-circuitpython-vl53l1x luma.oled
 
 ```
