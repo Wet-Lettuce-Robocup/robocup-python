@@ -69,12 +69,12 @@ class Main:
         # If something is currently running, stop it
         if self.current_task == Task.RESCUE:
             self.logger.info("Stopping rescue")
-            self.robot.stop()
+            self.robot.stop_moving()
             self.stop_event.set()
 
         elif self.current_task == Task.FOLLOW:
             self.logger.info("Stopping line follow")
-            self.robot.stop()
+            self.robot.stop_moving()
             self.stop_event.set()
 
         # If in idle, start line following.
@@ -155,7 +155,7 @@ class Main:
             if now < self.target_rescue_loop_time:
                 time.sleep(self.target_rescue_loop_time - now)
 
-        self.robot.stop()
+        self.robot.stop_moving()
         self.logger.info("Rescue stopped")
 
     def follow_loop(self):
@@ -168,11 +168,11 @@ class Main:
             if now < self.target_follow_loop_time:
                 time.sleep(self.target_follow_loop_time - now)
 
-        self.robot.stop()
+        self.robot.stop_moving()
         self.logger.info("Line follow stopped")
 
     def cleanup(self):
-        self.robot.stop()
+        self.robot.stop_moving()
         self.button.close()
         self.i2c_controller.front_tof_en.close()
         self.i2c_controller.side_tof_en.close()

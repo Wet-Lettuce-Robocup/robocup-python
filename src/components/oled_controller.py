@@ -102,7 +102,7 @@ class OLEDController:
     def _truncate_line(self, text: str, max_len: int = 28) -> str:
         return text if len(text) <= max_len else text[: max_len - 1] + "…"
 
-    def add_logs(self, message: str, level: int = logging.INFO) -> None:
+    def add_log(self, message: str, level: int = logging.INFO) -> None:
         """
         Add a log message to the OLED.
 
