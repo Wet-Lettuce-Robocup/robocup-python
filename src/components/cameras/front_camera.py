@@ -17,7 +17,7 @@ class FrontCamera:
 
         self._init_camera()
 
-        with open("src/components/cameras/ost.yaml", "r") as f:
+        with open("components/cameras/ost.yaml", "r") as f:
             calib_data = yaml.safe_load(f)
 
         raw_matrix = calib_data["camera_matrix"]
