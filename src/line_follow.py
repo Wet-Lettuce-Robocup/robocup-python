@@ -505,7 +505,7 @@ class Follow:
 
         if lines is not None:
             for line in lines:
-                x1, y1, x2, y2 = map(int, line[0])
+                x1, y1, x2, y2 = map(int, np.asarray(line).reshape(-1))
 
                 dx = x2 - x1
                 dy = y2 - y1
