@@ -42,7 +42,7 @@ class Main:
         self.follow = Follow(self.i2c_controller, self.robot)
 
         self.button = Button(6, pull_up=True)
-        self.button.when_pressed = self._on_pressed
+        self.button.when_released = self._on_pressed
 
         self.stop_event = threading.Event()
 

@@ -141,7 +141,7 @@ class Robot:
     def claw(self, action):
         """Action: "grab" or "release"."""
         if action == "grab":
-            self.servo_grab.set_angle(57)
+            self.servo_grab.set_angle(54)
             time.sleep(0.5)
         elif action == "release":
             self.servo_grab.set_angle(29)

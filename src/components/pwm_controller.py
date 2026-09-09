@@ -40,7 +40,7 @@ class PWMController:
             return
 
         with open(os.path.join(self.channel_path, "enable"), "w") as f:
-            f.write(str(int(msg.data)))
+            f.write(str(int(msg)))
 
     def set_period(self, msg: int) -> None:
         """
@@ -51,8 +51,8 @@ class PWMController:
         will also enable the channel.
         """
         with open(os.path.join(self.channel_path, "period"), "w") as f:
-            f.write(str(msg.data))
-            self.period = msg.data
+            f.write(str(msg))
+            self.period = msg
 
         if not self.enable_on_set_period:
             return
