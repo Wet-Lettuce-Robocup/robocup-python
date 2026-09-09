@@ -336,7 +336,7 @@ class Follow:
 
         _, black_mask = cv2.threshold(
             gray,
-            self.BLACK_THRESHOLD,
+            self.BLACK_THRESH,
             255,
             cv2.THRESH_BINARY_INV,
         )
