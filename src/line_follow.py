@@ -946,6 +946,7 @@ class Follow:
             c_frame = self.cropped_frame
 
             if self.red_detected(c_frame):
+                self.logger.info("Red detected")
                 self._transition_to(Task.RESCUE)
                 return
 

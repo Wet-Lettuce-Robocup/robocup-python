@@ -111,7 +111,7 @@ class Main:
 
                         self.rescue_thread.start()
 
-                    # Check whether rescue has finished
+                    # Check if rescue has finished
                     elif not self.rescue_thread.is_alive():
                         if self.rescue.is_finished():
                             self.logger.info("Rescue finished")
@@ -130,6 +130,7 @@ class Main:
 
                         self.follow_thread.start()
 
+                    # Check if line follow has finished
                     if not self.follow_thread.is_alive():
                         if self.follow.is_finished():
                             self.logger.info("Line follow finished")
@@ -153,6 +154,7 @@ class Main:
                 time.sleep(self.target_rescue_loop_time - now)
 
         self.robot.stop_moving()
+        self.rescue.led.set_brightness(0)
         self.logger.info("Rescue stopped")
 
     def follow_loop(self):
