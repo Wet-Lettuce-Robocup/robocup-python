@@ -14,6 +14,7 @@ class FrontCamera:
         self.frame = None
         self._running = True
         self._frame_lock = threading.Lock()
+        self.thread = None
 
         self._init_camera()
 
@@ -101,7 +102,8 @@ class FrontCamera:
     def close(self):
         self._running = False
 
-        if hasattr(self, "thread"):
-            self.thread.join(timeout=1.0)
+        if self.thread is not None:
+            self.thread.join(timeout=2.0)
 
         self.cam.stop()
+        self.cam.close()

@@ -7,7 +7,7 @@ from enum import Enum
 import cv2
 import numpy as np
 
-from components.cameras.front_camera import FrontCamera
+from components.cameras.down_camera import DownCamera
 
 
 class Task(Enum):
@@ -90,7 +90,7 @@ class Follow:
 
         self.i2c_controller = i2c_controller
         self.robot = robot
-        self.camera = FrontCamera()
+        self.camera = DownCamera()
 
         self.raw_frame = None
         self.cropped_frame = None

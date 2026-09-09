@@ -11,6 +11,7 @@ class DownCamera:
         self.frame = None
         self._running = True
         self._frame_lock = threading.Lock()
+        self.thread = None
 
         self._init_camera()
 
@@ -69,3 +70,12 @@ class DownCamera:
             return raw_frame, cropped_frame, debug_top_left, debug_bottom_right
         else:
             return raw_frame, cropped_frame
+
+    def close(self):
+        self._running = False
+
+        if self.thread is not None:
+            self.thread.join(timeout=2.0)
+
+        self.cam.stop()
+        self.cam.close()
