@@ -11,10 +11,10 @@ from components.cameras.down_camera import DownCamera
 
 
 class Task(Enum):
-    INIT = 1
-    FOLLOW = 2
-    TOWER = 3
-    RESCUE = 4
+    INIT = 0
+    FOLLOW = 1
+    TOWER = 2
+    RESCUE = 3
 
 
 @dataclass
