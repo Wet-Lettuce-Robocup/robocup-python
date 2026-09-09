@@ -109,8 +109,6 @@ class OLEDController:
         :param message: Message to display.
         :param level: Python logging level.
         """
-        if self.current_page == 1:
-            self.update_display()
 
         if level >= logging.CRITICAL:
             level_letter = "F"
