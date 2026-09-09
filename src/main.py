@@ -3,6 +3,7 @@ import threading
 import time
 from enum import Enum
 
+from components import i2c_controller
 from gpiozero import Button
 
 from components.i2c_controller import I2CBusController
@@ -174,8 +175,16 @@ class Main:
 if __name__ == "__main__":
     try:
         runtime = Main()
+        i2c = runtime.i2c_controller
         runtime.main()
     except KeyboardInterrupt:
         pass
     finally:
-        runtime.robot.stop()
+        if runtime:
+            if runtime.robot:
+                runtime.robot.stop()
+            runtime.button.close()
+        if i2c:
+            i2c.front_tof_en.close()
+            i2c.side_tof_en.close()
+            i2c.claw_tof_en.close()
