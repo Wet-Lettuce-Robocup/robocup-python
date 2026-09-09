@@ -55,7 +55,7 @@ class LineFollowResult:
 
 class Follow:
     VELOCITY = 50
-    MIN_RED_AREA = 500.0
+    MIN_RED_AREA = 2000.0
 
     WIDTH = 240
     HEIGHT = 134
