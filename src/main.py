@@ -171,22 +171,21 @@ class Main:
         self.robot.stop()
         self.logger.info("Line follow stopped")
 
+    def cleanup(self):
+        self.robot.stop()
+        self.button.close()
+        self.i2c_controller.front_tof_en.close()
+        self.i2c_controller.side_tof_en.close()
+        self.i2c_controller.claw_tof_en.close()
+
 
 if __name__ == "__main__":
+    runtime = None
     try:
         runtime = Main()
-        i2c = runtime.i2c_controller
-        r = runtime.robot
-        button = runtime.button
         runtime.main()
     except KeyboardInterrupt:
         pass
     finally:
-        if r:
-            r.stop()
-        if button:
-            button.close()
-        if i2c:
-            i2c.front_tof_en.close()
-            i2c.side_tof_en.close()
-            i2c.claw_tof_en.close()
+        if runtime is not None:
+            runtime.cleanup()

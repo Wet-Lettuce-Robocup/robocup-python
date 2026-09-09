@@ -39,6 +39,8 @@ class I2CBusController:
 
         self.i2c_lock = threading.Lock()
 
+        # self.logger.info("I2C Controller creating GPIO devices...")
+
         self.claw_tof_en = OutputDevice(20, active_high=True, initial_value=False)
         self.side_tof_en = OutputDevice(19, active_high=True, initial_value=False)
         self.front_tof_en = OutputDevice(7, active_high=True, initial_value=False)
