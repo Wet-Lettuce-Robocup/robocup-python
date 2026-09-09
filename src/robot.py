@@ -32,6 +32,9 @@ class Robot:
         self.limit_switch.when_pressed = self._limit_switch_was_pressed
 
     def drive(self, vel: int = 50, angular_vel: int = 0) -> None:
+        vel = int(vel)
+        angular_vel = int(angular_vel)
+
         data = [
             (vel >> 24) & 0xFF,
             (vel >> 16) & 0xFF,
