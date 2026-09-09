@@ -132,7 +132,7 @@ class I2CBusController:
 
             return response
 
-    def handle_write(self, device_address, register_address, data):
+    def handle_write(self, device_address, register_address, data=None):
         """
         Attempt to write data over I2C.
 
@@ -143,7 +143,8 @@ class I2CBusController:
 
         addr = device_address
         cmd = register_address
-        write_data = data
+        if data is not None:
+            write_data = data
 
         response = {
             "success": False,
@@ -152,7 +153,10 @@ class I2CBusController:
 
         with self.i2c_lock:
             try:
-                self.bus.write_i2c_block_data(addr, cmd, write_data)
+                if data is not None:
+                    self.bus.write_i2c_block_data(addr, cmd, write_data)
+                else:
+                    self.bus.write_byte(addr, cmd)
 
                 response["success"] = True
 
