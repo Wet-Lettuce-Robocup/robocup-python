@@ -67,7 +67,7 @@ class Follow:
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
 
-    BLACK_THRESH = 85
+    BLACK_THRESH = 40
     GREEN_H_LOW = 35
     GREEN_H_HIGH = 90
     GREEN_S_LOW = 70
@@ -82,8 +82,8 @@ class Follow:
 
     NO_LINE_LIMIT = 3
     GAP_LIMIT = 10
-    STUCK_LIMIT = 20
-    SAME_FRAME_THRESHOLD = 1.5
+    STUCK_LIMIT = 100
+    SAME_FRAME_THRESHOLD = 2
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.line_follow")
@@ -959,7 +959,7 @@ class Follow:
                 # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
                 self.robot.drive(self.VELOCITY, result.target_angle)
             elif result.action == "FORWARD":
-                self.robot.drive(self.VELOCITY * (2 / 3), result.target_angle)
+                self.robot.drive(self.VELOCITY * 0.8, result.target_angle)
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.robot.spin(result.target_angle)
             elif result.action == "U_TURN":
@@ -967,7 +967,7 @@ class Follow:
                 self.robot.spin(result.target_angle)
                 self.robot.drive_dist(0.05)
             elif result.action == "REVERSE":
-                self.robot.drive(-20)
+                self.robot.drive(-40)
 
         elif self.follow_status == Task.INIT:
             if not self.task_started:

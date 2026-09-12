@@ -72,6 +72,12 @@ Create venv:
 ```zsh
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
+sudo apt update && sudo apt install fonts-dejavu
+echo 'export QT_QPA_PLATFORM=xcb' >> ~/.zshrc
+source ~/.zshrc
+mkdir -p /home/robot/robocup-python/.venv/lib/python3.13/site-packages/cv2/qt/fonts
+cp /usr/share/fonts/truetype/dejavu/*.ttf /home/robot/robocup-python/.venv/lib/python3.13/site-packages/cv2/qt/fonts/
+
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 pip install ultralytics opencv-python adafruit-circuitpython-vl53l1x luma.oled
 
