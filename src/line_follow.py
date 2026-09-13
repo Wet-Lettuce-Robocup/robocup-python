@@ -932,9 +932,9 @@ class Follow:
             if not self.task_started:
                 self.task_started = True
 
-                self.robot.spin(90)
+                self.robot.spin_enc(90)
                 self.robot.drive_dist(30, -10, 40)  # to tune
-                self.robot.drive(20)
+                self.robot.drive_PID(200)
 
             if self.lineInFrame():
                 self.robot.stop_moving()
@@ -957,17 +957,17 @@ class Follow:
 
             if result.action == "FOLLOW":
                 # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
-                self.robot.drive(self.VELOCITY, result.target_angle)
+                self.robot.drive_PID(self.VELOCITY, result.target_angle)
             elif result.action == "FORWARD":
-                self.robot.drive(self.VELOCITY * 0.8, result.target_angle)
+                self.robot.drive_PID(self.VELOCITY * 0.8, result.target_angle)
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
-                self.robot.spin(result.target_angle)
+                self.robot.spin_enc(result.target_angle)
             elif result.action == "U_TURN":
                 self.robot.stop_moving()
-                self.robot.spin(result.target_angle)
-                self.robot.drive_dist(0.05)
+                self.robot.spin_enc(result.target_angle)
+                self.robot.drive_dist_enc(50)
             elif result.action == "REVERSE":
-                self.robot.drive(-40)
+                self.robot.drive_PID(-200)
 
         elif self.follow_status == Task.INIT:
             if not self.task_started:

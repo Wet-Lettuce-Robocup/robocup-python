@@ -54,6 +54,65 @@ class Robot:
         if not response["success"]:
             self.logger.info(response["message"])
 
+    def drive_PID(self, vel: int = 400, angular_vel: int = 0) -> None:
+        vel = int(vel)
+        angular_vel = int(angular_vel)
+
+        data = [
+            (vel >> 24) & 0xFF,
+            (vel >> 16) & 0xFF,
+            (vel >> 8) & 0xFF,
+            vel & 0xFF,
+            0,
+            0,
+            0,
+            0,
+            (angular_vel >> 24) & 0xFF,
+            (angular_vel >> 16) & 0xFF,
+            (angular_vel >> 8) & 0xFF,
+            angular_vel & 0xFF,
+        ]
+
+        response = self.i2c_controller.handle_write(self.STM_ADDR, 0x03, data)
+        if not response["success"]:
+            self.logger.info(response["message"])
+
+    def drive_dist_enc(self, dist: int, velocity: int = 400):
+        dist = int(dist)
+        velocity = int(velocity)
+        data = [
+            (dist >> 24) & 0xFF,
+            (dist >> 16) & 0xFF,
+            (dist >> 8) & 0xFF,
+            dist & 0xFF,
+            (velocity >> 24) & 0xFF,
+            (velocity >> 16) & 0xFF,
+            (velocity >> 8) & 0xFF,
+            velocity & 0xFF,
+        ]
+
+        response = self.i2c_controller.handle_write(self.STM_ADDR, 0x15, data)
+        if not response["success"]:
+            self.logger.info(response["message"])
+
+    def spin_enc(self, angle: int, velocity: int = 400):
+        angle = int(angle)
+        velocity = int(velocity)
+        data = [
+            (angle >> 24) & 0xFF,
+            (angle >> 16) & 0xFF,
+            (angle >> 8) & 0xFF,
+            angle & 0xFF,
+            (velocity >> 24) & 0xFF,
+            (velocity >> 16) & 0xFF,
+            (velocity >> 8) & 0xFF,
+            velocity & 0xFF,
+        ]
+
+        response = self.i2c_controller.handle_write(self.STM_ADDR, 0x15, data)
+        if not response["success"]:
+            self.logger.info(response["message"])
+
     def stop_moving(self) -> None:
         response = self.i2c_controller.handle_write(self.STM_ADDR, self.STOP_REQUEST)
         if not response["success"]:
