@@ -67,7 +67,7 @@ class Follow:
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
 
-    BLACK_THRESH = 40
+    BLACK_THRESH = 55
     GREEN_H_LOW = 35
     GREEN_H_HIGH = 90
     GREEN_S_LOW = 70
@@ -116,7 +116,7 @@ class Follow:
         self.same_frame_frames = 0
 
         self.pid = PID(
-            kp=80.0,
+            kp=10.0,
             kd=0.0,
             ki=0.0,
         )
@@ -970,7 +970,7 @@ class Follow:
 
             line_angle_normalised = result.line_angle / 90.0
 
-            line_error = 0.7 * result.line_offset + 0.3 * line_angle_normalised
+            line_error = (0.7 * result.line_offset + 0.3 * line_angle_normalised) * 50
             error_pid = self.pid.update(line_error, self.current_time - self.last_time)
             self.logger.info(
                 f"PID Error: {error_pid}, Line Error: {line_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
