@@ -57,8 +57,8 @@ class Follow:
     VELOCITY = 300
     MIN_RED_AREA = 2000.0
 
-    WIDTH = 240
-    HEIGHT = 134
+    WIDTH = 200
+    HEIGHT = 100
 
     BLUR_SIZE = 5
     MORPH_CLOSE_SIZE = 5

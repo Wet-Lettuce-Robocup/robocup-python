@@ -33,6 +33,7 @@ class DownCamera:
         self.thread.start()
 
     def _crop_frame(self, frame):
+        cropped_frame = frame[17:117, 20:220]
         # height, width = frame.shape[:2]
 
         # bottom_margin = int(height * 0.02)
@@ -44,7 +45,7 @@ class DownCamera:
         # end_x = width - side_margin
 
         # return (frame[start_y:end_y, start_x:end_x]), (start_x, start_y), (end_x - 1, end_y - 1)
-        return frame, (0, 0), (0, 0)  # Temporarily until crop is calibrated
+        return cropped_frame, (20, 17), (220, 117)  # Temporarily until crop is calibrated
 
     def update(self):
         while self._running:
