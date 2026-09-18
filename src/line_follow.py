@@ -122,7 +122,7 @@ class Follow:
         )
 
         self.last_time = None
-        self.current_time = None
+        self.last_error = 0
 
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.follow_status.name} -> {task.name}")
@@ -904,7 +904,7 @@ class Follow:
         if frame is None:
             return False
 
-        line = cv2.inRange(self.img, (0, 0, 0), (45, 45, 45))
+        line = cv2.inRange(frame, (0, 0, 0), (45, 45, 45))
         return cv2.countNonZero(line) > 5000
 
     def red_detected(self, image):
@@ -937,8 +937,13 @@ class Follow:
         return red_detected
 
     def main(self):
-        self.last_time = self.current_time
-        self.current_time = time.monotonic()
+        now = time.monotonic()
+        if self.last_time is None:
+            dt = 0.0
+        else:
+            dt = now - self.last_time
+
+        self.last_time = now
 
         if self.robot.limit_switch_pressed():
             self.robot.stop_moving()
@@ -971,7 +976,7 @@ class Follow:
             line_angle_normalised = result.line_angle / 90.0
 
             line_error = (0.7 * result.line_offset + 0.3 * line_angle_normalised) * 50
-            error_pid = self.pid.update(line_error, self.current_time - self.last_time)
+            error_pid = self.pid.update(line_error, dt)
             self.logger.info(
                 f"PID Error: {error_pid}, Line Error: {line_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
             )
@@ -982,8 +987,9 @@ class Follow:
             if result.action == "FOLLOW":
                 # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
                 self.robot.drive_PID(self.VELOCITY, error_pid)
+                self.last_error = error_pid
             elif result.action == "FORWARD":
-                self.robot.drive_PID(self.VELOCITY * 0.8, result.target_angle)
+                self.robot.drive_PID(self.VELOCITY * 0.8, result.last_error)
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
                 self.robot.spin_enc(result.target_angle)
