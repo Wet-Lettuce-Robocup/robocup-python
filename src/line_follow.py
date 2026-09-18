@@ -54,7 +54,7 @@ class LineFollowResult:
 
 
 class Follow:
-    VELOCITY = 50
+    VELOCITY = 300
     MIN_RED_AREA = 2000.0
 
     WIDTH = 240
@@ -80,8 +80,8 @@ class Follow:
 
     MAX_TARGET_ANGLE = 90.0
 
-    NO_LINE_LIMIT = 3
-    GAP_LIMIT = 10
+    NO_LINE_LIMIT = 10
+    GAP_LIMIT = 20
     STUCK_LIMIT = 100
     SAME_FRAME_THRESHOLD = 2
 
@@ -114,6 +114,15 @@ class Follow:
         self.no_line_frames = 0
         self.gap_frames = 0
         self.same_frame_frames = 0
+
+        self.pid = PID(
+            kp=80.0,
+            kd=0.0,
+            ki=0.0,
+        )
+
+        self.last_time = None
+        self.current_time = None
 
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.follow_status.name} -> {task.name}")
@@ -429,6 +438,10 @@ class Follow:
             dy *= -1
 
         angle = np.degrees(np.arctan2(dx, dy))
+        if angle > 90:
+            angle -= 180
+        elif angle < -90:
+            angle += 180
 
         # Find where the line is near the bottom of the image
         bottom_start = int(h * 0.78)
@@ -924,6 +937,9 @@ class Follow:
         return red_detected
 
     def main(self):
+        self.last_time = self.current_time
+        self.current_time = time.monotonic()
+
         if self.robot.limit_switch_pressed():
             self.robot.stop_moving()
             self._transition_to(Task.TOWER)
@@ -952,17 +968,27 @@ class Follow:
 
             result = self.process_line(r_frame, c_frame, debug=True)
 
+            line_angle_normalised = result.line_angle / 90.0
+
+            line_error = 0.7 * result.line_offset + 0.3 * line_angle_normalised
+            error_pid = self.pid.update(line_error, self.current_time - self.last_time)
+            self.logger.info(
+                f"PID Error: {error_pid}, Line Error: {line_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
+            )
+
             cv2.imshow("Debug", result.debug_frame)
             cv2.waitKey(1)
 
             if result.action == "FOLLOW":
                 # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
-                self.robot.drive_PID(self.VELOCITY, result.target_angle)
+                self.robot.drive_PID(self.VELOCITY, error_pid)
             elif result.action == "FORWARD":
                 self.robot.drive_PID(self.VELOCITY * 0.8, result.target_angle)
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
+                self.logger.info(f"Green turn detected {result.action}")
                 self.robot.spin_enc(result.target_angle)
             elif result.action == "U_TURN":
+                self.logger.info("U-turn detected")
                 self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
                 self.robot.drive_dist_enc(50)
@@ -979,3 +1005,29 @@ class Follow:
 
     def exit(self):
         cv2.destroyAllWindows()
+
+
+class PID:
+    def __init__(self, kp, ki, kd):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+
+        self.integral = 0.0
+        self.previous_error = 0.0
+
+    def update(self, error, dt):
+        if dt <= 0:
+            return 0.0
+
+        self.integral += error * dt
+
+        derivative = (error - self.previous_error) / dt
+
+        self.previous_error = error
+
+        return self.kp * error + self.ki * self.integral + self.kd * derivative
+
+    def reset(self):
+        self.integral = 0.0
+        self.previous_error = 0.0
