@@ -989,7 +989,7 @@ class Follow:
                 self.robot.drive_PID(self.VELOCITY, error_pid)
                 self.last_error = error_pid
             elif result.action == "FORWARD":
-                self.robot.drive_PID(self.VELOCITY * 0.8, result.last_error)
+                self.robot.drive_PID(self.VELOCITY * 0.8, self.last_error)
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
                 self.robot.spin_enc(result.target_angle)
