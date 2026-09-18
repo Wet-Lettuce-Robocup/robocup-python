@@ -116,7 +116,7 @@ class Follow:
         self.same_frame_frames = 0
 
         self.pid = PID(
-            kp=10.0,
+            kp=120.0,
             kd=0.0,
             ki=0.0,
         )
@@ -975,7 +975,7 @@ class Follow:
 
             line_angle_normalised = result.line_angle / 90.0
 
-            line_error = (0.7 * result.line_offset + 0.3 * line_angle_normalised) * 50
+            line_error = 0.7 * result.line_offset + 0.3 * line_angle_normalised
             error_pid = self.pid.update(line_error, dt)
             self.logger.info(
                 f"PID Error: {error_pid}, Line Error: {line_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
