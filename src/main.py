@@ -54,6 +54,8 @@ class Main:
         self.target_rescue_loop_time = None
         self.target_line_follow_loop_time = None
 
+        self.ball_tray_memory = None
+
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
 
@@ -110,6 +112,9 @@ class Main:
 
                         self.rescue_thread.start()
 
+                        if self.ball_tray_memory is not None:
+                            self.rescue.set_memory(self.ball_tray_memory)
+
                     # Check if rescue has finished
                     elif not self.rescue_thread.is_alive():
                         if self.rescue.is_finished():
@@ -153,7 +158,7 @@ class Main:
                 time.sleep(self.target_rescue_loop_time - now)
 
         self.robot.stop_moving()
-        self.rescue.exit()
+        self.ball_tray_memory = self.rescue.exit()
         self.logger.info("Rescue stopped")
 
     def follow_loop(self):

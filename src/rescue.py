@@ -58,6 +58,10 @@ class Rescue:
         self.current_task = task
         self.task_started = False
 
+    def set_memory(self, ball_tray_memory):
+        if ball_tray_memory is not None:
+            self.ball_storage = ball_tray_memory
+
     def _count_balls(self):
         silver_count = sum(value == "silver" for value in self.ball_storage.values())
         black_count = sum(value == "black" for value in self.ball_storage.values())
@@ -556,3 +560,4 @@ class Rescue:
 
     def exit(self):
         self.vision.close()
+        return self.ball_storage
