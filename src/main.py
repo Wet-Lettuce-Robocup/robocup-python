@@ -5,6 +5,7 @@ from enum import Enum
 
 from gpiozero import Button
 
+from components.fan_controller import FanController
 from components.i2c_controller import I2CBusController
 from components.oled_controller import OLEDController
 from components.robot_logging import setup_logging
@@ -36,6 +37,7 @@ class Main:
         self.i2c_controller = I2CBusController()
 
         self.robot = Robot(self.i2c_controller)
+        self.fan = FanController()
 
         self.rescue = Rescue(self.i2c_controller, self.robot)
         self.follow = Follow(self.i2c_controller, self.robot)
@@ -89,6 +91,8 @@ class Main:
     def main(self):
 
         self.logger.info("Robot started")
+
+        self.fan.manual_fan_speed(60)
 
         while True:
             try:

@@ -60,8 +60,8 @@ class Follow:
     WIDTH = 200
     HEIGHT = 100
 
-    BLUR_SIZE = 7
-    MORPH_CLOSE_SIZE = 7
+    BLUR_SIZE = 9
+    MORPH_CLOSE_SIZE = 9
     MORPH_OPEN_SIZE = 3
     HOUGH_THRESHOLD = 15
     HOUGH_MIN_LINE_LENGTH = 18
@@ -73,22 +73,22 @@ class Follow:
     GREEN_S_LOW = 70
     GREEN_V_LOW = 40
 
-    GREEN_MIN_AREA = 8
-    GREEN_MAX_AREA = 1000
+    GREEN_MIN_AREA = 500
+    GREEN_MAX_AREA = 5000
 
-    OFFSET_GAIN = 40.0
+    OFFSET_GAIN = 5.0
 
     MAX_TARGET_ANGLE = 90.0
 
-    NO_LINE_LIMIT = 10
-    GAP_LIMIT = 20
-    STUCK_LIMIT = 100
+    NO_LINE_LIMIT = 5
+    GAP_LIMIT = 10
+    STUCK_LIMIT = 50
     SAME_FRAME_THRESHOLD = 2
 
     MAX_TURN = 500
-    KP = 40.0
+    KP = 6.0
     KI = 0.0
-    KD = 0.0
+    KD = 0.6
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.line_follow")
