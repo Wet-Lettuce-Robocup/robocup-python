@@ -424,12 +424,8 @@ class Follow:
             if cw < 3 or ch < 3:
                 continue
 
-            contour_bottom = y + ch
-
-            if contour_bottom < roi.shape[0] * 0.6:
-                continue
-
             # Check if contour is close to bottom centre of frame
+            contour_bottom = y + ch
             contour_centre_x = x + cw / 2.0
             centre_distance = abs(contour_centre_x - centre_x)
 
