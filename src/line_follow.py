@@ -60,8 +60,8 @@ class Follow:
     WIDTH = 200
     HEIGHT = 100
 
-    BLUR_SIZE = 5
-    MORPH_CLOSE_SIZE = 5
+    BLUR_SIZE = 7
+    MORPH_CLOSE_SIZE = 7
     MORPH_OPEN_SIZE = 3
     HOUGH_THRESHOLD = 15
     HOUGH_MIN_LINE_LENGTH = 18
@@ -84,6 +84,11 @@ class Follow:
     GAP_LIMIT = 20
     STUCK_LIMIT = 100
     SAME_FRAME_THRESHOLD = 2
+
+    MAX_TURN = 500
+    KP = 40.0
+    KI = 0.0
+    KD = 0.0
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.line_follow")
@@ -116,13 +121,14 @@ class Follow:
         self.same_frame_frames = 0
 
         self.pid = PID(
-            kp=700.0,
-            kd=0.0,
-            ki=0.0,
+            kp=self.KP,
+            kd=self.KD,
+            ki=self.KI,
         )
 
         self.last_time = None
         self.last_error = 0
+        self.last_target_angle = 0.0
 
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.follow_status.name} -> {task.name}")
@@ -134,7 +140,7 @@ class Follow:
         if cropped_frame is None:
             return LineFollowResult(
                 action="REVERSE",
-                target_angle=self.last_line_angle,
+                target_angle=self.last_target_angle,
                 recovering=True,
             )
 
@@ -193,7 +199,7 @@ class Follow:
             self.recovering = True
 
             result = LineFollowResult(
-                target_angle=self.last_line_angle,
+                target_angle=self.last_target_angle,
                 action="REVERSE",
                 line_detected=line_info["detected"],
                 line_angle=line_info["angle"],
@@ -260,7 +266,7 @@ class Follow:
 
                 if self.gap_frames <= self.GAP_LIMIT:
                     result = LineFollowResult(
-                        target_angle=self.last_line_angle,
+                        target_angle=self.last_target_angle,
                         action="FORWARD",
                         line_detected=False,
                         gap_detected=True,
@@ -277,7 +283,7 @@ class Follow:
                     self.recovering = True
 
                     result = LineFollowResult(
-                        target_angle=self.last_line_angle,
+                        target_angle=self.last_target_angle,
                         action="REVERSE",
                         line_detected=False,
                         gap_detected=True,
@@ -336,7 +342,7 @@ class Follow:
         else:
             gray = frame.copy()
 
-        # Blur removes variations in brightness
+        # Blur smooths out variations in brightness
         gray = cv2.GaussianBlur(
             gray,
             (self.BLUR_SIZE, self.BLUR_SIZE),
@@ -390,14 +396,50 @@ class Follow:
 
         h, w = black_mask.shape
 
-        # Ignore the top part of the image. will probably change tbh
+        # Ignore the top part of the image when finding start of line
         roi_start = int(h * 0.2)
 
         roi = black_mask[roi_start:h, :]
 
-        ys, xs = np.nonzero(roi)
+        contours, _ = cv2.findContours(
+            roi,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_NONE,
+        )
 
-        if len(xs) < 12:
+        candidates = []
+
+        centre_x = w / 2.0
+        bottom_y = roi.shape[0] - 1
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+
+            if area < 10:
+                continue
+
+            x, y, cw, ch = cv2.boundingRect(contour)
+
+            # Ignore very small regions
+            if cw < 3 or ch < 3:
+                continue
+
+            contour_bottom = y + ch
+
+            if contour_bottom < roi.shape[0] * 0.6:
+                continue
+
+            # Check if contour is close to bottom centre of frame
+            contour_centre_x = x + cw / 2.0
+            centre_distance = abs(contour_centre_x - centre_x)
+
+            bottom_distance = abs(bottom_y - contour_bottom)
+
+            score = centre_distance * 3.0 + bottom_distance * 1.0 - area * 0.01
+
+            candidates.append((score, contour))
+
+        if not candidates:
             return {
                 "detected": False,
                 "angle": 0.0,
@@ -405,21 +447,21 @@ class Follow:
                 "points": None,
             }
 
-        # Reject frames where almost the entire ROI is black.
-        black_fraction = len(xs) / float(roi.size)
+        candidates.sort(key=lambda x: x[0])
+        _, best_contour = candidates[0]
 
-        if black_fraction > 0.55:
+        points = best_contour.reshape(-1, 2).astype(np.float32)
+
+        # Convert back to full-frame coordinates
+        points[:, 1] += roi_start
+
+        if len(points) < 12:
             return {
                 "detected": False,
                 "angle": 0.0,
                 "offset": 0.0,
                 "points": None,
             }
-
-        # Convert coordinates back to full-frame coordinates.
-        ys = ys + roi_start
-
-        points = np.column_stack((xs, ys)).astype(np.float32)
 
         # PCA gives the dominant direction of the line.
         mean, eigenvectors = cv2.PCACompute(
@@ -446,18 +488,13 @@ class Follow:
         # Find where the line is near the bottom of the image
         bottom_start = int(h * 0.78)
 
-        bottom_mask = black_mask[bottom_start:h, :]
+        bottom_points = points[points[:, 1] >= bottom_start]
 
-        bottom_y, bottom_x = np.nonzero(bottom_mask)
-
-        if len(bottom_x) >= 4:
-            bottom_center = float(np.mean(bottom_x))
+        if len(bottom_points) >= 4:
+            bottom_center = float(np.mean(bottom_points[:, 0]))
 
             offset = (bottom_center - (w / 2.0)) / (w / 2.0)
-
-            # Clamp.
             offset = float(np.clip(offset, -1.0, 1.0))
-
         else:
             offset = 0.0
 
@@ -495,6 +532,7 @@ class Follow:
     def _remember_line(self, line_info):
         self.last_line_angle = line_info["angle"]
         self.last_line_offset = line_info["offset"]
+        self.last_target_angle = self._calculate_target_angle(line_info)
 
         self.last_line_frame = True
 
@@ -908,6 +946,9 @@ class Follow:
         return cv2.countNonZero(line) > 5000
 
     def red_detected(self, image):
+        if image is None:
+            return
+
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         # Red has two ranges in HSV because hue wraps around at 180
@@ -962,6 +1003,10 @@ class Follow:
                 self._transition_to(Task.FOLLOW)
 
         elif self.follow_status == Task.FOLLOW:
+            if not self.task_started:
+                self.pid.reset()
+                self.last_time = None
+                self.task_started = True
             self.raw_frame, self.cropped_frame = self.camera.get_frame()
             r_frame = self.raw_frame
             c_frame = self.cropped_frame
@@ -973,12 +1018,14 @@ class Follow:
 
             result = self.process_line(r_frame, c_frame, debug=True)
 
-            line_angle_normalised = result.line_angle / 90.0
-
-            line_error = 0.7 * result.line_offset + line_angle_normalised
-            error_pid = self.pid.update(line_error, dt)
+            error_pid = self.pid.update(result.target_angle, dt)
+            turn_error = np.clip(
+                error_pid,
+                -self.MAX_TURN,
+                self.MAX_TURN,
+            )
             self.logger.info(
-                f"PID Error: {error_pid}, Line Error: {line_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
+                f"PID Error: {turn_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
             )
 
             cv2.imshow("Debug", result.debug_frame)
@@ -986,18 +1033,22 @@ class Follow:
 
             if result.action == "FOLLOW":
                 # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
-                self.robot.drive_PID(self.VELOCITY, error_pid)
-                self.last_error = error_pid
+                self.robot.drive_PID(self.VELOCITY, turn_error)
+                self.last_error = turn_error
+
             elif result.action == "FORWARD":
                 self.robot.drive_PID(self.VELOCITY * 0.8, self.last_error)
+
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
                 self.robot.spin_enc(result.target_angle)
+
             elif result.action == "U_TURN":
                 self.logger.info("U-turn detected")
                 self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
                 self.robot.drive_dist_enc(50)
+
             elif result.action == "REVERSE":
                 self.robot.drive_PID(-200)
 
