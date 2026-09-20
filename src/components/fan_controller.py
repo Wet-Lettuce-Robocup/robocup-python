@@ -39,7 +39,7 @@ class FanController:
 
         self.target_speed = 0
         self.current_speed = 0
-        self.last_set = time.now()
+        self.last_set = time.monotonic()
 
         self.count = 0
         self.tach.when_activated = self.tach_interrupt
@@ -84,7 +84,7 @@ class FanController:
             return
 
         self.target_speed = target_speed
-        self.last_set = time.now()
+        self.last_set = time.monotonic()
 
         if target_speed == 0:
             self.pwm_controller.set_enable(False)
@@ -105,7 +105,7 @@ class FanController:
     def calculate_speed(self) -> None:
         freq = self.get_frequency()
         rpm = (freq * 60) / self.PULSES_PER_REV
-        time_now = time.now()
+        time_now = time.monotonic()
         dt = (time_now - self.last_set).nanoseconds
         if dt > 5e9 and self.target_speed != 0 and rpm <= 1:
             # if fan is stopped, set target to 0 to prevent excess current draw
