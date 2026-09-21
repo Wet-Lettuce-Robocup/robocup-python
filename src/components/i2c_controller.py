@@ -129,7 +129,7 @@ class I2CBusController:
 
             except IOError as e:
                 self.logger.error(
-                    f"Error when reading from device:{register_address}, cmd:{cmd}, length:{length}"
+                    f"Error when reading from device:{addr}, cmd:{cmd}, length:{length}"
                 )
                 response.message = str(e)
 
@@ -164,9 +164,7 @@ class I2CBusController:
                 response["success"] = True
 
             except IOError as e:
-                self.logger.error(
-                    f"Error when writing to device:{register_address}, cmd:{cmd}, data:{data}"
-                )
+                self.logger.error(f"Error when writing to device:{addr}, cmd:{cmd}, data:{data}")
                 response["message"] = str(e)
 
             return response
