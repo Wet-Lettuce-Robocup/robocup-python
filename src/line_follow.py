@@ -68,7 +68,7 @@ class Follow:
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
 
-    BLACK_THRESH = 60
+    BLACK_THRESH = 65
 
     GREEN_H_LOW = 35
     GREEN_H_HIGH = 90
@@ -97,7 +97,7 @@ class Follow:
     BOTTOM_LINE_MIN_HEIGHT = 4
 
     MAX_TURN = 500
-    KP = 6.0
+    KP = 5.5
     KI = 0.0
     KD = 0.8
 
@@ -124,6 +124,7 @@ class Follow:
         self.recovering = False
         self.bottom_recovering = False
         self.is_turning = False
+        self.turning_cooldown = 0
 
         self.previous_frame = None
         self.last_green_centres = []
@@ -1183,9 +1184,8 @@ class Follow:
                 self.debug_frame = result.debug_frame
 
             if self.is_turning:
-                if not result.green_left or not result.green_right:
+                if now > self.turning_cooldown:
                     self.is_turning = False
-                    # Needs to turn 90º then drive forward a little bit, need to test that tho
 
             elif result.action == "FOLLOW":
                 error_pid = self.pid.update(result.target_angle, dt)
@@ -1202,10 +1202,11 @@ class Follow:
                 #     )
 
             elif result.action == "FORWARD":
-                self.robot.drive_PID(self.VELOCITY * 0.8, self.last_error)
+                self.robot.drive_PID(self.VELOCITY * 0.7, self.last_error)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.is_turning = True
+                self.turning_cooldown = now + 3
                 self.logger.info(f"Green turn detected {result.action}")
                 self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
@@ -1215,6 +1216,7 @@ class Follow:
 
             elif result.action == "U_TURN":
                 self.is_turning = True
+                self.turning_cooldown = now + 3
                 self.logger.info("U-turn detected")
                 self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
