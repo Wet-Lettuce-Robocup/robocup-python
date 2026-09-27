@@ -123,8 +123,6 @@ class Follow:
         self.in_gap = False
         self.recovering = False
         self.bottom_recovering = False
-        self.is_turning = False
-        self.turning_cooldown = 0
 
         self.previous_frame = None
         self.last_green_centres = []
@@ -1183,10 +1181,6 @@ class Follow:
             if self.DEBUG and result.debug_frame is not None:
                 self.debug_frame = result.debug_frame
 
-            if self.is_turning:
-                if now > self.turning_cooldown:
-                    self.is_turning = False
-
             elif result.action == "FOLLOW":
                 error_pid = self.pid.update(result.target_angle, dt)
                 turn_error = np.clip(
@@ -1205,22 +1199,22 @@ class Follow:
                 self.robot.drive_PID(self.VELOCITY * 0.7, self.last_error)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
-                self.is_turning = True
-                self.turning_cooldown = now + 3
                 self.logger.info(f"Green turn detected {result.action}")
-                self.robot.stop_moving()
+
+                self.robot.drive_dist_enc(5)
+                time.sleep(3)
                 self.robot.spin_enc(result.target_angle)
+                time.sleep(3)
 
                 self.pid.reset()
                 self.last_time = None
 
             elif result.action == "U_TURN":
-                self.is_turning = True
-                self.turning_cooldown = now + 3
                 self.logger.info("U-turn detected")
-                self.robot.stop_moving()
+
                 self.robot.spin_enc(result.target_angle)
-                self.robot.drive_dist_enc(50)
+                time.sleep(5)
+                # self.robot.drive_dist_enc(50)
 
                 self.pid.reset()
                 self.last_time = None
