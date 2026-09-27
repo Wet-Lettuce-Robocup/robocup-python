@@ -3,6 +3,7 @@ import threading
 import time
 from enum import Enum
 
+import cv2
 from gpiozero import Button
 
 from components.fan_controller import FanController
@@ -98,14 +99,14 @@ class Main:
             try:
                 if self.current_task == Task.INIT:
                     if self.task_started:
-                        time.sleep(0.01)
+                        time.sleep(0.05)
                         continue
 
                     self.task_started = True
                     self._transition_to(Task.IDLE)
 
                 elif self.current_task == Task.IDLE:
-                    time.sleep(0.01)
+                    time.sleep(0.05)
 
                 elif self.current_task == Task.RESCUE:
                     if not self.task_started:
@@ -127,7 +128,7 @@ class Main:
                         else:
                             self._transition_to(Task.IDLE)
 
-                    time.sleep(0.01)
+                    time.sleep(0.05)
 
                 elif self.current_task == Task.FOLLOW:
                     if not self.task_started:
@@ -138,6 +139,13 @@ class Main:
 
                         self.follow_thread.start()
 
+                    if self.follow.DEBUG:
+                        debug_frame = self.follow.get_debug_frame()
+
+                        if debug_frame is not None:
+                            cv2.imshow("Debug", debug_frame)
+                            cv2.waitKey(1)
+
                     # Check if line follow has finished
                     if not self.follow_thread.is_alive():
                         if self.follow.is_finished():
@@ -146,7 +154,7 @@ class Main:
                         else:
                             self._transition_to(Task.IDLE)
 
-                    time.sleep(0.01)
+                    time.sleep(0.05)
 
             except Exception as e:
                 self.logger.error(f"Caught an error in main loop! {e}")
@@ -171,12 +179,15 @@ class Main:
 
             self.follow.main()
 
+            if self.follow.is_finished():
+                break
+
             now = time.monotonic()
             if now < self.target_follow_loop_time:
                 time.sleep(self.target_follow_loop_time - now)
 
         self.robot.stop_moving()
-        self.follow.exit()
+        cv2.destroyAllWindows()
         self.logger.info("Line follow stopped")
 
     def cleanup(self):
@@ -185,6 +196,8 @@ class Main:
         self.i2c_controller.front_tof_en.close()
         self.i2c_controller.side_tof_en.close()
         self.i2c_controller.claw_tof_en.close()
+
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

@@ -53,7 +53,7 @@ class LineFollowResult:
 
 
 class Follow:
-    DEBUG = False
+    DEBUG = True
 
     VELOCITY = 280
     MIN_RED_AREA = 2000.0
@@ -142,6 +142,8 @@ class Follow:
         self.last_error = 0
         self.last_target_angle = 0.0
 
+        self.debug_frame = None
+
         self.black_close_kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE,
             (self.MORPH_CLOSE_SIZE, self.MORPH_CLOSE_SIZE),
@@ -162,6 +164,9 @@ class Follow:
 
         self.follow_status = task
         self.task_started = False
+
+    def get_debug_frame(self):
+        return self.debug_frame
 
     def process_line(self, raw_frame, cropped_frame, debug=False) -> LineFollowResult:
         if cropped_frame is None:
@@ -1174,8 +1179,7 @@ class Follow:
             result = self.process_line(r_frame, c_frame, debug=self.DEBUG)
 
             if self.DEBUG and result.debug_frame is not None:
-                cv2.imshow("Debug", result.debug_frame)
-                cv2.waitKey(1)
+                self.debug_frame = result.debug_frame
 
             if result.action == "FOLLOW":
                 error_pid = self.pid.update(result.target_angle, dt)
@@ -1186,10 +1190,10 @@ class Follow:
                 )
                 self.robot.drive_PID(self.VELOCITY, turn_error)
                 self.last_error = turn_error
-                if self.DEBUG:
-                    self.logger.info(
-                        f"PID Error: {turn_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
-                    )
+                # if self.DEBUG:
+                #     self.logger.info(
+                #         f"PID Error: {turn_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
+                #     )
 
             elif result.action == "FORWARD":
                 self.robot.drive_PID(self.VELOCITY * 0.8, self.last_error)
@@ -1220,9 +1224,6 @@ class Follow:
 
     def is_finished(self):
         return self.follow_status == Task.RESCUE
-
-    def exit(self):
-        cv2.destroyAllWindows()
 
 
 class PID:
