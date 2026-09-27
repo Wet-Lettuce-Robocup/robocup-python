@@ -55,7 +55,7 @@ class LineFollowResult:
 class Follow:
     DEBUG = True
 
-    VELOCITY = 250
+    VELOCITY = 220
     MIN_RED_AREA = 2000.0
 
     WIDTH = 200
@@ -81,7 +81,7 @@ class Follow:
     GREEN_PIXEL_THRESHOLD = 400
     GREEN_HSV_DOWNSAMPLE = 2
 
-    OFFSET_GAIN = 5.0
+    OFFSET_GAIN = 8.0
 
     MAX_TARGET_ANGLE = 90.0
 
@@ -97,7 +97,7 @@ class Follow:
     BOTTOM_LINE_MIN_HEIGHT = 4
 
     MAX_TURN = 500
-    KP = 5.5
+    KP = 5.2
     KI = 0.0
     KD = 0.8
 
@@ -1201,7 +1201,7 @@ class Follow:
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
 
-                self.robot.drive_dist_enc(5)
+                self.robot.drive_dist_enc(50)
                 time.sleep(3)
                 self.robot.spin_enc(result.target_angle)
                 time.sleep(3)
