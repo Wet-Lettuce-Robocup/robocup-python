@@ -1,5 +1,4 @@
 import logging
-import math
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -54,7 +53,9 @@ class LineFollowResult:
 
 
 class Follow:
-    VELOCITY = 300
+    DEBUG = False
+
+    VELOCITY = 280
     MIN_RED_AREA = 2000.0
 
     WIDTH = 200
@@ -67,28 +68,38 @@ class Follow:
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
 
-    BLACK_THRESH = 55
+    BLACK_THRESH = 60
+
     GREEN_H_LOW = 35
     GREEN_H_HIGH = 90
     GREEN_S_LOW = 70
     GREEN_V_LOW = 40
 
-    GREEN_MIN_AREA = 500
-    GREEN_MAX_AREA = 5000
+    GREEN_MIN_AREA = 2000
+    GREEN_MAX_AREA = 15000
+
+    GREEN_PIXEL_THRESHOLD = 400
+    GREEN_HSV_DOWNSAMPLE = 2
 
     OFFSET_GAIN = 5.0
 
     MAX_TARGET_ANGLE = 90.0
 
-    NO_LINE_LIMIT = 5
-    GAP_LIMIT = 10
-    STUCK_LIMIT = 50
+    NO_LINE_LIMIT = 2
+    GAP_LIMIT = 5
+    STUCK_LIMIT = 30
     SAME_FRAME_THRESHOLD = 2
+
+    LOWER_LINE_LIMIT = 0.75
+    LOWER_LINE_REVERSE_THRESH = 0.85
+    LOWER_LINE_RECOVER_THRESH = 0.78
+    MIN_BOTTOM_LINE_POINTS = 8
+    BOTTOM_LINE_MIN_HEIGHT = 4
 
     MAX_TURN = 500
     KP = 6.0
     KI = 0.0
-    KD = 0.6
+    KD = 0.8
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.line_follow")
@@ -111,6 +122,7 @@ class Follow:
 
         self.in_gap = False
         self.recovering = False
+        self.bottom_recovering = False
 
         self.previous_frame = None
         self.last_green_centres = []
@@ -129,6 +141,21 @@ class Follow:
         self.last_time = None
         self.last_error = 0
         self.last_target_angle = 0.0
+
+        self.black_close_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (self.MORPH_CLOSE_SIZE, self.MORPH_CLOSE_SIZE),
+        )
+
+        self.black_open_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (self.MORPH_OPEN_SIZE, self.MORPH_OPEN_SIZE),
+        )
+
+        self.green_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (3, 3),
+        )
 
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.follow_status.name} -> {task.name}")
@@ -158,22 +185,45 @@ class Follow:
         same_frame = self._update_same_frame_counter(frame)
 
         # Black processing
-        gray, black_mask = self._make_black_mask(frame)
+        _, black_mask = self._make_black_mask(frame)
         line_info = self._detect_line(black_mask)
 
-        geometry = self._detect_junction_geometry(black_mask)
-
         # Green processing
-        green_info = self._detect_green_squares(
-            frame,
-            geometry["horizontal_y"],
-            geometry["vertical_x"],
-        )
+        green_present = self._green_present(frame)
 
-        special_result = self._handle_green_markers(
-            green_info,
-            geometry,
-        )
+        if green_present:
+            green_mask = self._get_green_mask(
+                frame,
+                downsample=False,
+            )
+
+            geometry = self._detect_junction_geometry(black_mask)
+
+            green_info = self._detect_green_squares(
+                frame,
+                geometry["horizontal_y"],
+                geometry["vertical_x"],
+                green_mask=green_mask,
+            )
+
+            special_result = self._handle_green_markers(
+                green_info,
+                geometry,
+            )
+        else:
+            special_result = None
+            geometry = {
+                "horizontal": [],
+                "vertical": [],
+                "horizontal_y": None,
+                "vertical_x": None,
+            }
+            green_info = {
+                "centres": [],
+                "green_left": False,
+                "green_right": False,
+                "mask": None,
+            }
 
         if special_result is not None:
             result = special_result
@@ -231,13 +281,84 @@ class Follow:
         # Only a black line
         if line_info["detected"]:
             self.no_line_frames = 0
-            self._remember_line(line_info)
 
             # Line found after a gap
             if self.in_gap:
                 self.in_gap = False
                 self.gap_frames = 0
                 self.recovering = False
+
+            # Entire line is in bottom of frame
+
+            if self.bottom_recovering:
+                recover_threshold = self.HEIGHT * self.LOWER_LINE_RECOVER_THRESH
+
+                points = line_info["points"]
+
+                if points is not None:
+                    min_y = float(np.min(points[:, 1]))
+                else:
+                    min_y = self.HEIGHT
+
+                if min_y < recover_threshold:
+                    self.bottom_recovering = False
+                    self.recovering = False
+                else:
+                    self.recovering = True
+
+                    result = LineFollowResult(
+                        target_angle=self.last_target_angle,
+                        action="REVERSE",
+                        line_detected=True,
+                        line_angle=line_info["angle"],
+                        line_offset=line_info["offset"],
+                        recovering=True,
+                        no_line_frames=0,
+                        gap_frames=0,
+                        same_frame_frames=same_frame,
+                        last_line_angle=self.last_line_angle,
+                        last_line_offset=self.last_line_offset,
+                    )
+
+                    if debug:
+                        result.debug_frame = self._make_debug_frame(
+                            frame, black_mask, line_info, geometry, green_info, result
+                        )
+
+                    return result
+
+            if line_info["bottom_only"]:
+                self.bottom_recovering = True
+                self.recovering = True
+
+                result = LineFollowResult(
+                    target_angle=self.last_target_angle,
+                    action="REVERSE",
+                    line_detected=True,
+                    line_angle=line_info["angle"],
+                    line_offset=line_info["offset"],
+                    recovering=True,
+                    no_line_frames=0,
+                    gap_frames=0,
+                    same_frame_frames=same_frame,
+                    last_line_angle=self.last_line_angle,
+                    last_line_offset=self.last_line_offset,
+                )
+
+                if debug:
+                    result.debug_frame = self._make_debug_frame(
+                        frame,
+                        black_mask,
+                        line_info,
+                        geometry,
+                        green_info,
+                        result,
+                    )
+
+                return result
+
+            self._remember_line(line_info)
+            self.recovering = False
 
             target_angle = self._calculate_target_angle(line_info)
 
@@ -356,34 +477,16 @@ class Follow:
             cv2.THRESH_BINARY_INV,
         )
 
-        # Connect small gaps in the line.
-        close_kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (
-                self.MORPH_CLOSE_SIZE,
-                self.MORPH_CLOSE_SIZE,
-            ),
-        )
-
         black_mask = cv2.morphologyEx(
             black_mask,
             cv2.MORPH_CLOSE,
-            close_kernel,
-        )
-
-        # Remove isolated regions
-        open_kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (
-                self.MORPH_OPEN_SIZE,
-                self.MORPH_OPEN_SIZE,
-            ),
+            self.black_close_kernel,
         )
 
         black_mask = cv2.morphologyEx(
             black_mask,
             cv2.MORPH_OPEN,
-            open_kernel,
+            self.black_open_kernel,
         )
 
         return gray, black_mask
@@ -404,13 +507,23 @@ class Follow:
         contours, _ = cv2.findContours(
             roi,
             cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_NONE,
+            cv2.CHAIN_APPROX_SIMPLE,
         )
 
-        candidates = []
+        if not contours:
+            return {
+                "detected": False,
+                "angle": 0.0,
+                "offset": 0.0,
+                "points": None,
+                "bottom_only": False,
+            }
 
         centre_x = w / 2.0
         bottom_y = roi.shape[0] - 1
+
+        best_contour = None
+        best_score = float("inf")
 
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -427,29 +540,26 @@ class Follow:
             # Check if contour is close to bottom centre of frame
             contour_bottom = y + ch
             contour_centre_x = x + cw / 2.0
-            centre_distance = abs(contour_centre_x - centre_x)
 
+            centre_distance = abs(contour_centre_x - centre_x)
             bottom_distance = abs(bottom_y - contour_bottom)
 
             score = centre_distance * 3.0 + bottom_distance * 1.0 - area * 0.01
 
-            candidates.append((score, contour))
+            if score < best_score:
+                best_score = score
+                best_contour = contour
 
-        if not candidates:
+        if best_contour is None:
             return {
                 "detected": False,
                 "angle": 0.0,
                 "offset": 0.0,
                 "points": None,
+                "bottom_only": False,
             }
 
-        candidates.sort(key=lambda x: x[0])
-        _, best_contour = candidates[0]
-
         points = best_contour.reshape(-1, 2).astype(np.float32)
-
-        # Convert back to full-frame coordinates
-        points[:, 1] += roi_start
 
         if len(points) < 12:
             return {
@@ -457,7 +567,25 @@ class Follow:
                 "angle": 0.0,
                 "offset": 0.0,
                 "points": None,
+                "bottom_only": False,
             }
+
+        # Convert back to full-frame coordinates
+        points[:, 1] += roi_start
+
+        # Check if line is fully within lower part of frame
+        bottom_threshold = h * self.LOWER_LINE_REVERSE_THRESH
+
+        min_y = float(np.min(points[:, 1]))
+        max_y = float(np.max(points[:, 1]))
+
+        line_height = max_y - min_y
+
+        bottom_only = (
+            len(points) >= self.MIN_BOTTOM_LINE_POINTS
+            and min_y >= bottom_threshold
+            and line_height >= self.BOTTOM_LINE_MIN_HEIGHT
+        )
 
         # PCA gives the dominant direction of the line.
         mean, eigenvectors = cv2.PCACompute(
@@ -482,7 +610,7 @@ class Follow:
             angle += 180
 
         # Find where the line is near the bottom of the image
-        bottom_start = int(h * 0.78)
+        bottom_start = int(h * self.LOWER_LINE_LIMIT)
 
         bottom_points = points[points[:, 1] >= bottom_start]
 
@@ -499,6 +627,7 @@ class Follow:
             "angle": float(angle),
             "offset": offset,
             "points": points,
+            "bottom_only": bottom_only,
         }
 
     def _calculate_target_angle(self, line_info):
@@ -531,6 +660,61 @@ class Follow:
         self.last_target_angle = self._calculate_target_angle(line_info)
 
         self.last_line_frame = True
+
+    def _get_green_mask(self, frame, downsample=False):
+
+        if frame is None:
+            return None
+
+        if downsample:
+            frame = frame[
+                :: self.GREEN_HSV_DOWNSAMPLE,
+                :: self.GREEN_HSV_DOWNSAMPLE,
+            ]
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        lower_green = np.array(
+            [
+                self.GREEN_H_LOW,
+                self.GREEN_S_LOW,
+                self.GREEN_V_LOW,
+            ],
+            dtype=np.uint8,
+        )
+
+        upper_green = np.array(
+            [
+                self.GREEN_H_HIGH,
+                255,
+                255,
+            ],
+            dtype=np.uint8,
+        )
+
+        return cv2.inRange(
+            hsv,
+            lower_green,
+            upper_green,
+        )
+
+    def _green_present(self, frame):
+        """
+        Cheap test to determine whether there is enough green in the frame
+        to justify running Hough and green contour detection.
+        """
+        if frame is None:
+            return False
+
+        green_mask = self._get_green_mask(
+            frame,
+            downsample=True,
+        )
+
+        if green_mask is None:
+            return False
+
+        return cv2.countNonZero(green_mask) >= self.GREEN_PIXEL_THRESHOLD
 
     def _detect_junction_geometry(self, black_mask):
         """
@@ -606,49 +790,18 @@ class Follow:
             "vertical_x": vertical_x,
         }
 
-    def _detect_green_squares(self, frame, horizontal_y, vertical_x):
+    def _detect_green_squares(self, frame, horizontal_y, vertical_x, green_mask=None):
         """
         Detect green squares that are below a black line (valid green turns).
         """
 
-        hsv = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2HSV,
-        )
-
-        lower_green = np.array(
-            [
-                self.GREEN_H_LOW,
-                self.GREEN_S_LOW,
-                self.GREEN_V_LOW,
-            ],
-            dtype=np.uint8,
-        )
-
-        upper_green = np.array(
-            [
-                self.GREEN_H_HIGH,
-                255,
-                255,
-            ],
-            dtype=np.uint8,
-        )
-
-        green_mask = cv2.inRange(
-            hsv,
-            lower_green,
-            upper_green,
-        )
-
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE,
-            (3, 3),
-        )
+        if green_mask is None:
+            green_mask = self._get_green_mask(frame)
 
         green_mask = cv2.morphologyEx(
             green_mask,
             cv2.MORPH_OPEN,
-            kernel,
+            self.green_kernel,
         )
 
         contours, _ = cv2.findContours(
@@ -662,10 +815,7 @@ class Follow:
         for contour in contours:
             area = cv2.contourArea(contour)
 
-            if area < self.GREEN_MIN_AREA:
-                continue
-
-            if area > self.GREEN_MAX_AREA:
+            if area < self.GREEN_MIN_AREA or area > self.GREEN_MAX_AREA:
                 continue
 
             perimeter = cv2.arcLength(
@@ -711,12 +861,12 @@ class Follow:
         green_right = False
 
         if horizontal_y is not None and vertical_x is not None:
+            # Small tolerance around vertical line
+            tolerance = 5
+
             for cx, cy, area in centres:
                 if cy <= horizontal_y:
                     continue
-
-                # Small tolerance around vertical line
-                tolerance = 5
 
                 if cx < vertical_x - tolerance:
                     green_left = True
@@ -943,7 +1093,7 @@ class Follow:
 
     def red_detected(self, image):
         if image is None:
-            return
+            return False
 
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
@@ -1002,7 +1152,16 @@ class Follow:
             if not self.task_started:
                 self.pid.reset()
                 self.last_time = None
+                self.last_error = 0
+                self.recovering = False
+                self.bottom_recovering = False
+                self.in_gap = False
+                self.no_line_frames = 0
+                self.last_line_frame = None
+                self.gap_frames = 0
+                self.same_frame_frames = 0
                 self.task_started = True
+
             self.raw_frame, self.cropped_frame = self.camera.get_frame()
             r_frame = self.raw_frame
             c_frame = self.cropped_frame
@@ -1012,25 +1171,25 @@ class Follow:
                 self._transition_to(Task.RESCUE)
                 return
 
-            result = self.process_line(r_frame, c_frame, debug=True)
+            result = self.process_line(r_frame, c_frame, debug=self.DEBUG)
 
-            error_pid = self.pid.update(result.target_angle, dt)
-            turn_error = np.clip(
-                error_pid,
-                -self.MAX_TURN,
-                self.MAX_TURN,
-            )
-            self.logger.info(
-                f"PID Error: {turn_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
-            )
-
-            cv2.imshow("Debug", result.debug_frame)
-            cv2.waitKey(1)
+            if self.DEBUG and result.debug_frame is not None:
+                cv2.imshow("Debug", result.debug_frame)
+                cv2.waitKey(1)
 
             if result.action == "FOLLOW":
-                # angle = pid.calcTurnRate(angle, 1.4, 0, 0, self.lastError, self.pastErrors)
+                error_pid = self.pid.update(result.target_angle, dt)
+                turn_error = np.clip(
+                    error_pid,
+                    -self.MAX_TURN,
+                    self.MAX_TURN,
+                )
                 self.robot.drive_PID(self.VELOCITY, turn_error)
                 self.last_error = turn_error
+                if self.DEBUG:
+                    self.logger.info(
+                        f"PID Error: {turn_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
+                    )
 
             elif result.action == "FORWARD":
                 self.robot.drive_PID(self.VELOCITY * 0.8, self.last_error)
@@ -1039,11 +1198,17 @@ class Follow:
                 self.logger.info(f"Green turn detected {result.action}")
                 self.robot.spin_enc(result.target_angle)
 
+                self.pid.reset()
+                self.last_time = None
+
             elif result.action == "U_TURN":
                 self.logger.info("U-turn detected")
                 self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
                 self.robot.drive_dist_enc(50)
+
+                self.pid.reset()
+                self.last_time = None
 
             elif result.action == "REVERSE":
                 self.robot.drive_PID(-200)
@@ -1069,11 +1234,25 @@ class PID:
         self.integral = 0.0
         self.previous_error = 0.0
 
+        self.initialised = False
+
     def update(self, error, dt):
         if dt <= 0:
             return 0.0
 
+        dt = min(dt, 0.1)
+
+        if not self.initialised:
+            self.previous_error = error
+            self.initialised = True
+            return self.kp * error
+
         self.integral += error * dt
+        self.integral = np.clip(
+            self.integral,
+            -1000.0,
+            1000.0,
+        )
 
         derivative = (error - self.previous_error) / dt
 
@@ -1084,3 +1263,4 @@ class PID:
     def reset(self):
         self.integral = 0.0
         self.previous_error = 0.0
+        self.initialised = False
