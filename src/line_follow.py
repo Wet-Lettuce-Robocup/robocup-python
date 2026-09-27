@@ -1181,7 +1181,7 @@ class Follow:
             if self.DEBUG and result.debug_frame is not None:
                 self.debug_frame = result.debug_frame
 
-            elif result.action == "FOLLOW":
+            if result.action == "FOLLOW":
                 error_pid = self.pid.update(result.target_angle, dt)
                 turn_error = np.clip(
                     error_pid,

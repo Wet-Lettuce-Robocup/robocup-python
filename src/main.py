@@ -26,7 +26,7 @@ class Main:
     RESCUE_LOOPS_PER_SECOND = 10
     FOLLOW_LOOPS_PER_SECOND = 20
 
-    BUTTON_DEBOUNCE_TIME = 0.30
+    BUTTON_DEBOUNCE_TIME = 0.10
 
     def __init__(self):
 
@@ -194,6 +194,7 @@ class Main:
                             cv2.waitKey(1)
 
                     if not self.follow_thread.is_alive():
+                        cv2.destroyAllWindows()
                         if self.follow.is_finished():
                             self.logger.info("Line follow finished")
                             self._transition_to(Task.RESCUE)
@@ -241,8 +242,6 @@ class Main:
                 time.sleep(self.target_line_follow_loop_time - now)
 
         self.robot.stop_moving()
-
-        cv2.destroyAllWindows()
 
         self.logger.info("Line follow stopped")
 
