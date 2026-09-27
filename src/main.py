@@ -26,6 +26,8 @@ class Main:
     RESCUE_LOOPS_PER_SECOND = 10
     FOLLOW_LOOPS_PER_SECOND = 20
 
+    BUTTON_DEBOUNCE_TIME = 0.30
+
     def __init__(self):
 
         self.logger = setup_logging()
@@ -43,8 +45,13 @@ class Main:
         self.rescue = Rescue(self.i2c_controller, self.robot)
         self.follow = Follow(self.i2c_controller, self.robot)
 
-        self.button = Button(6, pull_up=True)
+        self.button = Button(6, pull_up=True, bounce_time=self.BUTTON_DEBOUNCE_TIME)
+
         self.button.when_released = self._on_pressed
+
+        self.button_event = threading.Event()
+
+        self.last_button_time = 0.0
 
         self.stop_event = threading.Event()
 
@@ -60,31 +67,59 @@ class Main:
         self.ball_tray_memory = None
 
     def _transition_to(self, task):
+        if self.current_task == task:
+            return
+
         self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
 
         self.current_task = task
         self.task_started = False
 
     def _on_pressed(self):
-        """Called automatically when the button is pressed."""
+
+        now = time.monotonic()
+
+        if now - self.last_button_time < self.BUTTON_DEBOUNCE_TIME:
+            return
+
+        self.last_button_time = now
+
+        self.button_event.set()
+
+    def _handle_button(self):
+        """
+        Process a button press from the main application thread.
+
+        All task state changes happen here, rather than inside the GPIO callback.
+        """
+
+        if not self.button_event.is_set():
+            return
+
+        self.button_event.clear()
 
         self.logger.info("Button pressed")
 
-        # If something is currently running, stop it
-        if self.current_task == Task.RESCUE:
-            self.logger.info("Stopping rescue")
-            self.robot.stop_moving()
-            self.stop_event.set()
+        if self.current_task == Task.IDLE:
+            self.logger.info("Starting line follow")
+
+            self.stop_event.clear()
+
+            self._transition_to(Task.FOLLOW)
 
         elif self.current_task == Task.FOLLOW:
             self.logger.info("Stopping line follow")
-            self.robot.stop_moving()
+
             self.stop_event.set()
 
-        # If in idle, start line following.
-        elif self.current_task == Task.IDLE:
-            self.logger.info("Starting line follow")
-            self._transition_to(Task.FOLLOW)
+            self.robot.stop_moving()
+
+        elif self.current_task == Task.RESCUE:
+            self.logger.info("Stopping rescue")
+
+            self.stop_event.set()
+
+            self.robot.stop_moving()
 
     def reset_stop(self):
         self.stop_event.clear()
@@ -97,6 +132,9 @@ class Main:
 
         while True:
             try:
+                # Handle button presses from the main thread.
+                self._handle_button()
+
                 if self.current_task == Task.INIT:
                     if self.task_started:
                         time.sleep(0.05)
@@ -113,14 +151,18 @@ class Main:
                         self.task_started = True
                         self.reset_stop()
 
-                        self.rescue_thread = threading.Thread(target=self.rescue_loop, daemon=True)
+                        self.rescue_thread = threading.Thread(
+                            target=self.rescue_loop,
+                            daemon=True,
+                            name="RescueThread",
+                        )
 
                         self.rescue_thread.start()
 
                         if self.ball_tray_memory is not None:
                             self.rescue.set_memory(self.ball_tray_memory)
 
-                    # Check if rescue has finished
+                    # Wait until the worker has stopped
                     elif not self.rescue_thread.is_alive():
                         if self.rescue.is_finished():
                             self.logger.info("Rescue finished")
@@ -135,10 +177,15 @@ class Main:
                         self.task_started = True
                         self.reset_stop()
 
-                        self.follow_thread = threading.Thread(target=self.follow_loop, daemon=True)
+                        self.follow_thread = threading.Thread(
+                            target=self.follow_loop,
+                            daemon=True,
+                            name="FollowThread",
+                        )
 
                         self.follow_thread.start()
 
+                    # Debug display
                     if self.follow.DEBUG:
                         debug_frame = self.follow.get_debug_frame()
 
@@ -146,7 +193,6 @@ class Main:
                             cv2.imshow("Debug", debug_frame)
                             cv2.waitKey(1)
 
-                    # Check if line follow has finished
                     if not self.follow_thread.is_alive():
                         if self.follow.is_finished():
                             self.logger.info("Line follow finished")
@@ -160,22 +206,29 @@ class Main:
                 self.logger.error(f"Caught an error in main loop! {e}")
 
     def rescue_loop(self):
+
         while not self.stop_event.is_set():
             self.target_rescue_loop_time = time.monotonic() + (1 / self.RESCUE_LOOPS_PER_SECOND)
 
             self.rescue.tick_rescue()
 
             now = time.monotonic()
+
             if now < self.target_rescue_loop_time:
                 time.sleep(self.target_rescue_loop_time - now)
 
         self.robot.stop_moving()
+
         self.ball_tray_memory = self.rescue.exit()
+
         self.logger.info("Rescue stopped")
 
     def follow_loop(self):
+
         while not self.stop_event.is_set():
-            self.target_follow_loop_time = time.monotonic() + (1 / self.FOLLOW_LOOPS_PER_SECOND)
+            self.target_line_follow_loop_time = time.monotonic() + (
+                1 / self.FOLLOW_LOOPS_PER_SECOND
+            )
 
             self.follow.main()
 
@@ -183,11 +236,14 @@ class Main:
                 break
 
             now = time.monotonic()
-            if now < self.target_follow_loop_time:
-                time.sleep(self.target_follow_loop_time - now)
+
+            if now < self.target_line_follow_loop_time:
+                time.sleep(self.target_line_follow_loop_time - now)
 
         self.robot.stop_moving()
+
         cv2.destroyAllWindows()
+
         self.logger.info("Line follow stopped")
 
     def cleanup(self):
@@ -202,6 +258,7 @@ class Main:
 
 if __name__ == "__main__":
     runtime = None
+
     try:
         runtime = Main()
         runtime.main()
