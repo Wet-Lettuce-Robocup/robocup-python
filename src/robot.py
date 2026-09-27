@@ -109,7 +109,7 @@ class Robot:
             velocity & 0xFF,
         ]
 
-        response = self.i2c_controller.handle_write(self.STM_ADDR, 0x15, data)
+        response = self.i2c_controller.handle_write(self.STM_ADDR, 0x16, data)
         if not response["success"]:
             self.logger.info(response["message"])
 
