@@ -55,7 +55,7 @@ class LineFollowResult:
 class Follow:
     DEBUG = True
 
-    VELOCITY = 280
+    VELOCITY = 250
     MIN_RED_AREA = 2000.0
 
     WIDTH = 200
@@ -85,8 +85,8 @@ class Follow:
 
     MAX_TARGET_ANGLE = 90.0
 
-    NO_LINE_LIMIT = 2
-    GAP_LIMIT = 5
+    NO_LINE_LIMIT = 5
+    GAP_LIMIT = 10
     STUCK_LIMIT = 30
     SAME_FRAME_THRESHOLD = 2
 
@@ -123,6 +123,7 @@ class Follow:
         self.in_gap = False
         self.recovering = False
         self.bottom_recovering = False
+        self.is_turning = False
 
         self.previous_frame = None
         self.last_green_centres = []
@@ -1181,7 +1182,12 @@ class Follow:
             if self.DEBUG and result.debug_frame is not None:
                 self.debug_frame = result.debug_frame
 
-            if result.action == "FOLLOW":
+            if self.is_turning:
+                if not result.green_left or not result.green_right:
+                    self.is_turning = False
+                    # Needs to turn 90º then drive forward a little bit, need to test that tho
+
+            elif result.action == "FOLLOW":
                 error_pid = self.pid.update(result.target_angle, dt)
                 turn_error = np.clip(
                     error_pid,
@@ -1199,13 +1205,16 @@ class Follow:
                 self.robot.drive_PID(self.VELOCITY * 0.8, self.last_error)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
+                self.is_turning = True
                 self.logger.info(f"Green turn detected {result.action}")
+                self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
 
                 self.pid.reset()
                 self.last_time = None
 
             elif result.action == "U_TURN":
+                self.is_turning = True
                 self.logger.info("U-turn detected")
                 self.robot.stop_moving()
                 self.robot.spin_enc(result.target_angle)
