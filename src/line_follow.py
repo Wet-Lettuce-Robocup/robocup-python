@@ -1188,7 +1188,19 @@ class Follow:
                     -self.MAX_TURN,
                     self.MAX_TURN,
                 )
-                self.robot.drive_PID(self.VELOCITY, turn_error)
+
+                turn_strength = abs(turn_error) / self.MAX_TURN
+
+                # Makes robot slow on large error values
+                turn_factor = 2.0  # Larger value = slows down more at larger angles
+                speed_scale = 1.0 / (1.0 + turn_factor * turn_strength**2)
+                velocity = self.VELOCITY * speed_scale
+
+                if turn_strength > 0.9:
+                    velocity = 0
+
+                self.robot.drive_PID(int(velocity), int(turn_error))
+
                 self.last_error = turn_error
                 # if self.DEBUG:
                 #     self.logger.info(
@@ -1196,7 +1208,8 @@ class Follow:
                 #     )
 
             elif result.action == "FORWARD":
-                self.robot.drive_PID(self.VELOCITY * 0.7, self.last_error)
+                self.logger.info(f"Moving forward: {result.action}")
+                self.robot.drive_PID(self.VELOCITY * 0.5, self.last_error)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
@@ -1220,6 +1233,7 @@ class Follow:
                 self.last_time = None
 
             elif result.action == "REVERSE":
+                self.logger.info(f"Reversing: {result.action}")
                 self.robot.drive_PID(-200)
 
         elif self.follow_status == Task.INIT:
