@@ -1,4 +1,4 @@
-from time import monotonic as sleep
+from time import sleep
 
 from components.i2c_controller import I2CBusController
 from components.servo_controller import ServoController
