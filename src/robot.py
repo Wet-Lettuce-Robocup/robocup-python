@@ -227,6 +227,16 @@ class Robot:
             self.servo_tray_release.set_angle(46)
             time.sleep(0.5)
 
+    def relax_servos(self):
+        self.servo_grab.disable()
+        self.servo_lift.disable()
+        self.servo_tray_release.disable()
+
+    def cleanup_servos(self):
+        self.servo_grab.cleanup()
+        self.servo_lift.cleanup()
+        self.servo_tray_release.cleanup()
+
     def limit_switch_pressed(self):
         """Returns True if limit switch is pressed in that moment."""
         return self.limit_switch.is_pressed
