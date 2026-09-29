@@ -55,7 +55,7 @@ class LineFollowResult:
 class Follow:
     DEBUG = True
 
-    VELOCITY = 220
+    VELOCITY = 280
     MIN_RED_AREA = 2000.0
 
     WIDTH = 200
@@ -81,14 +81,14 @@ class Follow:
     GREEN_PIXEL_THRESHOLD = 400
     GREEN_HSV_DOWNSAMPLE = 2
 
-    OFFSET_GAIN = 8.0
+    OFFSET_GAIN = 15.0
 
     MAX_TARGET_ANGLE = 90.0
 
     NO_LINE_LIMIT = 5
     GAP_LIMIT = 10
     STUCK_LIMIT = 30
-    SAME_FRAME_THRESHOLD = 2
+    SAME_FRAME_THRESHOLD = 0.8
 
     LOWER_LINE_LIMIT = 0.75
     LOWER_LINE_REVERSE_THRESH = 0.85
@@ -97,9 +97,9 @@ class Follow:
     BOTTOM_LINE_MIN_HEIGHT = 4
 
     MAX_TURN = 500
-    KP = 5.2
+    KP = 6.0
     KI = 0.0
-    KD = 0.8
+    KD = 0.2
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.line_follow")
@@ -1192,7 +1192,7 @@ class Follow:
                 turn_strength = abs(turn_error) / self.MAX_TURN
 
                 # Makes robot slow on large error values
-                turn_factor = 2.0  # Larger value = slows down more at larger angles
+                turn_factor = 1.5  # Larger value = slows down more at larger angles
                 speed_scale = 1.0 / (1.0 + turn_factor * turn_strength**2)
                 velocity = self.VELOCITY * speed_scale
 
@@ -1208,16 +1208,17 @@ class Follow:
                 #     )
 
             elif result.action == "FORWARD":
-                self.logger.info(f"Moving forward: {result.action}")
+                self.logger.info("Moving forward")
                 self.robot.drive_PID(self.VELOCITY * 0.5, self.last_error)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
 
-                self.robot.drive_dist_enc(50)
+                self.robot.drive_dist_enc(70, 600)
+                time.sleep(1)
+                self.robot.spin_enc(result.target_angle, 500)
                 time.sleep(3)
-                self.robot.spin_enc(result.target_angle)
-                time.sleep(3)
+                self.robot.drive_dist_enc(50, 400)
 
                 self.pid.reset()
                 self.last_time = None
@@ -1233,7 +1234,7 @@ class Follow:
                 self.last_time = None
 
             elif result.action == "REVERSE":
-                self.logger.info(f"Reversing: {result.action}")
+                self.logger.info("Reversing")
                 self.robot.drive_PID(-200)
 
         elif self.follow_status == Task.INIT:

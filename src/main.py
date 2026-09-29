@@ -248,6 +248,7 @@ class Main:
     def cleanup(self):
         self.robot.stop_moving()
         self.button.close()
+        self.fan.manual_fan_speed(0)
         self.i2c_controller.front_tof_en.close()
         self.i2c_controller.side_tof_en.close()
         self.i2c_controller.claw_tof_en.close()

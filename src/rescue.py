@@ -560,4 +560,5 @@ class Rescue:
 
     def exit(self):
         self.vision.close()
+        self.led.set_brightness(0)
         return self.ball_storage
