@@ -18,33 +18,43 @@ class Task(Enum):
 
 @dataclass
 class LineFollowResult:
-    # Desired direction relative to the robot.
+    # Desired direction relative to the robot
     target_angle: float = 0.0
 
     # What the main state machine should currently do: FOLLOW / FORWARD / TURN_LEFT / TURN_RIGHT / U_TURN / REVERSE
     action: str = "FOLLOW"
 
-    # Useful information for debugging / state-machine decisions.
+    # Line information
     line_detected: bool = False
     line_angle: float = 0.0
     line_offset: float = 0.0
 
+    # Gap information
     gap_detected: bool = False
+
+    # Green marker information
     green_left: bool = False
     green_right: bool = False
     u_turn: bool = False
 
+    # Junction / crossing information
     horizontal_line: bool = False
     vertical_line: bool = False
+    horizontal_crossing: bool = False
 
+    # Recovery information
+    bottom_only: bool = False
+    sharp_bend: bool = False
     stuck: bool = False
     recovering: bool = False
 
+    # Counters
     no_line_frames: int = 0
     gap_frames: int = 0
     same_frame_frames: int = 0
+    bottom_only_frames: int = 0
 
-    # Last reliable line information.
+    # Last reliable line information
     last_line_angle: float = 0.0
     last_line_offset: float = 0.0
 
@@ -55,20 +65,30 @@ class LineFollowResult:
 class Follow:
     DEBUG = True
 
-    VELOCITY = 280
-    MIN_RED = 200
-
+    # Camera
     WIDTH = 200
     HEIGHT = 100
 
+    # Black line det
     BLUR_SIZE = 9
+
     MORPH_CLOSE_SIZE = 9
     MORPH_OPEN_SIZE = 3
+
+    BLACK_THRESH = 60
+
+    # Horizontal line det
+    CROSSING_SIDE_Y_TOLERANCE = 8
+    CROSSING_MIN_EDGE_RUN = 3
+    CROSSING_MAX_EDGE_RUN = 25
+    CROSSING_IGNORE_BAND = 8
+    CROSSING_TOP_X_TOLERANCE = 45
+
+    # Green turn det
+
     HOUGH_THRESHOLD = 15
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
-
-    BLACK_THRESH = 60
 
     GREEN_H_LOW = 35
     GREEN_H_HIGH = 90
@@ -81,22 +101,38 @@ class Follow:
     GREEN_PIXEL_THRESHOLD = 400
     GREEN_HSV_DOWNSAMPLE = 2
 
+    # Driving
+    VELOCITY = 280
     OFFSET_GAIN = 15.0
-
     MAX_TARGET_ANGLE = 90.0
 
+    # Gap and recovery
     NO_LINE_LIMIT = 5
-    GAP_LIMIT = 10
+
+    GAP_LIMIT = 20
+
     STUCK_LIMIT = 30
     SAME_FRAME_THRESHOLD = 0.8
 
     LOWER_LINE_LIMIT = 0.75
     LOWER_LINE_REVERSE_THRESH = 0.85
-    LOWER_LINE_RECOVER_THRESH = 0.78
+
     MIN_BOTTOM_LINE_POINTS = 8
     BOTTOM_LINE_MIN_HEIGHT = 4
 
+    BOTTOM_SHARP_ANGLE = 22.0
+    BOTTOM_SHARP_HISTORY_ANGLE = 18.0
+    BOTTOM_REVERSE_FRAMES = 12
+
+    # Rescue detection
+    MIN_RED = 200
+
+    RED_S_MIN = 70
+    RED_V_MIN = 70
+
+    # PID
     MAX_TURN = 500
+
     KP = 5.5
     KI = 0.0
     KD = 0.2
@@ -116,15 +152,23 @@ class Follow:
         self.follow_status = Task.INIT
         self.task_started = False
 
+        # Last reliable line
         self.last_line_angle = 0.0
         self.last_line_offset = 0.0
         self.last_line_frame = None
 
+        # State
         self.in_gap = False
         self.recovering = False
-        self.bottom_recovering = False
 
+        # Bottom-only recovery state
+        self.bottom_recovering = False
+        self.bottom_only_frames = 0
+
+        # Frame comparison
         self.previous_frame = None
+
+        # Green
         self.last_green_centres = []
 
         # Counters
@@ -144,6 +188,7 @@ class Follow:
 
         self.debug_frame = None
 
+        # Morphology
         self.black_close_kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE,
             (self.MORPH_CLOSE_SIZE, self.MORPH_CLOSE_SIZE),
@@ -155,6 +200,11 @@ class Follow:
         )
 
         self.green_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (3, 3),
+        )
+
+        self.red_kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE,
             (3, 3),
         )
@@ -191,7 +241,10 @@ class Follow:
 
         # Black processing
         _, black_mask = self._make_black_mask(frame)
-        line_info = self._detect_line(black_mask)
+
+        crossing = self._detect_horizontal_crossing(black_mask)
+
+        line_info = self._detect_line(black_mask, crossing)
 
         # Green processing
         green_present = self._green_present(frame)
@@ -232,11 +285,15 @@ class Follow:
 
         if special_result is not None:
             result = special_result
+
+            result.horizontal_crossing = crossing["detected"]
+
             result.debug_frame = (
                 self._make_debug_frame(
                     frame,
                     black_mask,
                     line_info,
+                    crossing,
                     geometry,
                     green_info,
                     result,
@@ -259,11 +316,14 @@ class Follow:
                 line_detected=line_info["detected"],
                 line_angle=line_info["angle"],
                 line_offset=line_info["offset"],
+                horizontal_crossing=crossing["detected"],
+                bottom_only=line_info["bottom_only"],
                 stuck=True,
                 recovering=True,
                 no_line_frames=self.no_line_frames,
                 gap_frames=self.gap_frames,
                 same_frame_frames=same_frame,
+                bottom_only_frames=self.bottom_only_frames,
                 last_line_angle=self.last_line_angle,
                 last_line_offset=self.last_line_offset,
             )
@@ -273,6 +333,7 @@ class Follow:
                     frame,
                     black_mask,
                     line_info,
+                    crossing,
                     geometry,
                     green_info,
                     result,
@@ -283,7 +344,7 @@ class Follow:
 
             return result
 
-        # Only a black line
+        # Line detected
         if line_info["detected"]:
             self.no_line_frames = 0
 
@@ -293,59 +354,126 @@ class Follow:
                 self.gap_frames = 0
                 self.recovering = False
 
-            # Entire line is in bottom of frame
+            # Bottom-only detection
 
-            if self.bottom_recovering:
-                recover_threshold = self.HEIGHT * self.LOWER_LINE_RECOVER_THRESH
+            # There are two cases:
+            #   1. Straight line / genuine gap: -> keep driving straight
+            #   2. Sharp bend: -> command a hard turn
+            # If the hard-turn state persists, assume the robot has
+            # overshot and reverse.
 
-                points = line_info["points"]
+            if line_info["bottom_only"]:
+                self.bottom_only_frames += 1
+                self.bottom_recovering = True
 
-                if points is not None:
-                    min_y = float(np.min(points[:, 1]))
-                else:
-                    min_y = self.HEIGHT
+                current_angle = abs(line_info["angle"])
 
-                if min_y < recover_threshold:
-                    self.bottom_recovering = False
+                previous_angle = abs(self.last_target_angle)
+
+                sharp_bend = (
+                    current_angle >= self.BOTTOM_SHARP_ANGLE
+                    or previous_angle >= self.BOTTOM_SHARP_HISTORY_ANGLE
+                )
+
+                # Straight bottom-only line
+                if not sharp_bend:
                     self.recovering = False
-                else:
-                    self.recovering = True
 
                     result = LineFollowResult(
-                        target_angle=self.last_target_angle,
-                        action="REVERSE",
+                        target_angle=0.0,
+                        action="FORWARD",
                         line_detected=True,
                         line_angle=line_info["angle"],
                         line_offset=line_info["offset"],
-                        recovering=True,
+                        gap_detected=True,
+                        horizontal_crossing=crossing["detected"],
+                        bottom_only=True,
+                        sharp_bend=False,
+                        recovering=False,
                         no_line_frames=0,
-                        gap_frames=0,
+                        gap_frames=self.gap_frames,
                         same_frame_frames=same_frame,
+                        bottom_only_frames=self.bottom_only_frames,
                         last_line_angle=self.last_line_angle,
                         last_line_offset=self.last_line_offset,
                     )
 
                     if debug:
                         result.debug_frame = self._make_debug_frame(
-                            frame, black_mask, line_info, geometry, green_info, result
+                            frame,
+                            black_mask,
+                            line_info,
+                            crossing,
+                            geometry,
+                            green_info,
+                            result,
                         )
 
                     return result
 
-            if line_info["bottom_only"]:
-                self.bottom_recovering = True
+                # Sharp bend
+                if abs(line_info["angle"]) >= self.BOTTOM_SHARP_ANGLE:
+                    turn_direction = np.sign(line_info["angle"])
+                elif abs(self.last_target_angle) > 0:
+                    turn_direction = np.sign(self.last_target_angle)
+                else:
+                    turn_direction = 1.0
+
+                target_angle = float(90.0 * turn_direction)
+
+                # Overshoot handling
+
+                if self.bottom_only_frames >= self.BOTTOM_REVERSE_FRAMES:
+                    self.recovering = True
+
+                    result = LineFollowResult(
+                        target_angle=target_angle,
+                        action="REVERSE",
+                        line_detected=True,
+                        line_angle=line_info["angle"],
+                        line_offset=line_info["offset"],
+                        horizontal_crossing=crossing["detected"],
+                        bottom_only=True,
+                        sharp_bend=True,
+                        recovering=True,
+                        no_line_frames=0,
+                        gap_frames=0,
+                        same_frame_frames=same_frame,
+                        bottom_only_frames=self.bottom_only_frames,
+                        last_line_angle=self.last_line_angle,
+                        last_line_offset=self.last_line_offset,
+                    )
+
+                    if debug:
+                        result.debug_frame = self._make_debug_frame(
+                            frame,
+                            black_mask,
+                            line_info,
+                            crossing,
+                            geometry,
+                            green_info,
+                            result,
+                        )
+
+                    return result
+
+                # Hard turn in place
                 self.recovering = True
 
                 result = LineFollowResult(
-                    target_angle=self.last_target_angle,
-                    action="REVERSE",
+                    target_angle=target_angle,
+                    action="FOLLOW",
                     line_detected=True,
                     line_angle=line_info["angle"],
                     line_offset=line_info["offset"],
+                    horizontal_crossing=crossing["detected"],
+                    bottom_only=True,
+                    sharp_bend=True,
                     recovering=True,
                     no_line_frames=0,
                     gap_frames=0,
                     same_frame_frames=same_frame,
+                    bottom_only_frames=self.bottom_only_frames,
                     last_line_angle=self.last_line_angle,
                     last_line_offset=self.last_line_offset,
                 )
@@ -355,6 +483,7 @@ class Follow:
                         frame,
                         black_mask,
                         line_info,
+                        crossing,
                         geometry,
                         green_info,
                         result,
@@ -362,8 +491,12 @@ class Follow:
 
                 return result
 
-            self._remember_line(line_info)
+            # A normal line
+            self.bottom_only_frames = 0
+            self.bottom_recovering = False
             self.recovering = False
+
+            self._remember_line(line_info)
 
             target_angle = self._calculate_target_angle(line_info)
 
@@ -373,9 +506,13 @@ class Follow:
                 line_detected=True,
                 line_angle=line_info["angle"],
                 line_offset=line_info["offset"],
+                horizontal_crossing=crossing["detected"],
+                bottom_only=False,
+                sharp_bend=False,
                 no_line_frames=0,
                 gap_frames=0,
                 same_frame_frames=same_frame,
+                bottom_only_frames=0,
                 last_line_angle=self.last_line_angle,
                 last_line_offset=self.last_line_offset,
             )
@@ -390,18 +527,39 @@ class Follow:
                 self.in_gap = True
                 self.gap_frames += 1
 
-                result = LineFollowResult(
-                    target_angle=0,
-                    action="FORWARD",
-                    line_detected=False,
-                    gap_detected=True,
-                    recovering=False,
-                    no_line_frames=self.no_line_frames,
-                    gap_frames=self.gap_frames,
-                    same_frame_frames=same_frame,
-                    last_line_angle=self.last_line_angle,
-                    last_line_offset=self.last_line_offset,
-                )
+                if self.gap_frames <= self.GAP_LIMIT:
+                    result = LineFollowResult(
+                        target_angle=0.0,
+                        action="FORWARD",
+                        line_detected=False,
+                        gap_detected=True,
+                        horizontal_crossing=crossing["detected"],
+                        recovering=False,
+                        no_line_frames=self.no_line_frames,
+                        gap_frames=self.gap_frames,
+                        same_frame_frames=same_frame,
+                        bottom_only_frames=0,
+                        last_line_angle=self.last_line_angle,
+                        last_line_offset=self.last_line_offset,
+                    )
+
+                else:
+                    self.recovering = True
+
+                    result = LineFollowResult(
+                        target_angle=0.0,
+                        action="REVERSE",
+                        line_detected=False,
+                        gap_detected=True,
+                        horizontal_crossing=crossing["detected"],
+                        recovering=True,
+                        no_line_frames=self.no_line_frames,
+                        gap_frames=self.gap_frames,
+                        same_frame_frames=same_frame,
+                        bottom_only_frames=0,
+                        last_line_angle=self.last_line_angle,
+                        last_line_offset=self.last_line_offset,
+                    )
 
             # No previous line
             else:
@@ -412,10 +570,12 @@ class Follow:
                         target_angle=0.0,
                         action="REVERSE",
                         line_detected=False,
+                        horizontal_crossing=crossing["detected"],
                         recovering=True,
                         no_line_frames=self.no_line_frames,
                         gap_frames=0,
                         same_frame_frames=same_frame,
+                        bottom_only_frames=0,
                     )
 
                 else:
@@ -423,16 +583,20 @@ class Follow:
                         target_angle=0.0,
                         action="FORWARD",
                         line_detected=False,
+                        horizontal_crossing=crossing["detected"],
                         no_line_frames=self.no_line_frames,
                         gap_frames=0,
                         same_frame_frames=same_frame,
+                        bottom_only_frames=0,
                     )
 
+        # Debug
         if debug:
             result.debug_frame = self._make_debug_frame(
                 frame,
                 black_mask,
                 line_info,
+                crossing,
                 geometry,
                 green_info,
                 result,
@@ -440,9 +604,13 @@ class Follow:
 
         return result
 
+    # Black mask
+
     def _make_black_mask(self, frame):
         """
-        Blur the frame and create a mask of dark regions.
+        Create a mask of dark regions.
+
+        Red regions are removed so silver isn't included maybe.
         """
 
         if len(frame.shape) == 3:
@@ -450,7 +618,6 @@ class Follow:
         else:
             gray = frame.copy()
 
-        # Blur smooths out variations in brightness
         gray = cv2.GaussianBlur(
             gray,
             (self.BLUR_SIZE, self.BLUR_SIZE),
@@ -476,17 +643,290 @@ class Follow:
             self.black_open_kernel,
         )
 
+        # Remove red pixels
+        red_mask = self._get_red_mask(frame)
+
+        if red_mask is not None:
+            black_mask[red_mask > 0] = 0
+
         return gray, black_mask
 
-    def _detect_line(self, black_mask):
+    # Red detection
+
+    def _get_red_mask(self, image):
+        if image is None:
+            return None
+
+        hsv = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2HSV,
+        )
+
+        mask1 = cv2.inRange(
+            hsv,
+            np.array(
+                [0, self.RED_S_MIN, self.RED_V_MIN],
+                dtype=np.uint8,
+            ),
+            np.array(
+                [10, 255, 255],
+                dtype=np.uint8,
+            ),
+        )
+
+        mask2 = cv2.inRange(
+            hsv,
+            np.array(
+                [170, self.RED_S_MIN, self.RED_V_MIN],
+                dtype=np.uint8,
+            ),
+            np.array(
+                [180, 255, 255],
+                dtype=np.uint8,
+            ),
+        )
+
+        red_mask = mask1 | mask2
+
+        # Close small gaps in reflected red areas
+        red_mask = cv2.morphologyEx(
+            red_mask,
+            cv2.MORPH_CLOSE,
+            self.red_kernel,
+        )
+
+        red_mask = cv2.morphologyEx(
+            red_mask,
+            cv2.MORPH_OPEN,
+            self.red_kernel,
+        )
+
+        return red_mask
+
+    def red_detected(self, image):
+        if image is None:
+            return False
+
+        red_mask = self._get_red_mask(image)
+
+        if red_mask is None:
+            return False
+
+        red_pixels = cv2.countNonZero(red_mask)
+
+        # Check num of red pixels
+        if red_pixels >= self.MIN_RED:
+            self.logger.info(f"Red pixels: {red_pixels}")
+            return True
+
+        # Then check for red contours
+        contours, _ = cv2.findContours(
+            red_mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+
+            if area >= self.MIN_RED:
+                self.logger.info(f"Red area: {area:.1f}")
+                return True
+
+        return False
+
+    # Horizontal line detection
+
+    def _find_edge_run(self, black_mask, edge):
         """
-        Detect the main line using dark pixels in the lower part of
-        the image.
+        Find the longest compact black run touching one image edge.
+
+        Returns:
+            {
+                "detected": bool,
+                "start": int,
+                "end": int,
+                "centre": float,
+                "length": int,
+            }
         """
 
         h, w = black_mask.shape
 
-        # Ignore the top part of the image when finding start of line
+        if edge == "left":
+            values = black_mask[:, 0] > 0
+
+        elif edge == "right":
+            values = black_mask[:, w - 1] > 0
+
+        elif edge == "top":
+            values = black_mask[0, :] > 0
+
+        else:
+            raise ValueError(f"Unknown edge: {edge}")
+
+        indices = np.where(values)[0]
+
+        if len(indices) == 0:
+            return {
+                "detected": False,
+                "start": None,
+                "end": None,
+                "centre": None,
+                "length": 0,
+            }
+
+        # Split indices into contiguous runs
+        runs = []
+
+        start = indices[0]
+        previous = indices[0]
+
+        for value in indices[1:]:
+            if value != previous + 1:
+                runs.append((start, previous))
+                start = value
+
+            previous = value
+
+        runs.append((start, previous))
+
+        # Keep plausible compact runs
+        valid_runs = []
+
+        for start, end in runs:
+            length = end - start + 1
+
+            if length < self.CROSSING_MIN_EDGE_RUN:
+                continue
+
+            if length > self.CROSSING_MAX_EDGE_RUN:
+                continue
+
+            valid_runs.append((length, start, end))
+
+        if not valid_runs:
+            return {
+                "detected": False,
+                "start": None,
+                "end": None,
+                "centre": None,
+                "length": 0,
+            }
+
+        # Longest plausible run
+        length, start, end = max(
+            valid_runs,
+            key=lambda x: x[0],
+        )
+
+        return {
+            "detected": True,
+            "start": start,
+            "end": end,
+            "centre": (start + end) / 2.0,
+            "length": length,
+        }
+
+    def _detect_horizontal_crossing(self, black_mask):
+        """
+        Detect the type of junction described for the course:
+
+            main line
+                 |
+                 |
+        ----------+----------
+                 |
+                 |
+
+        Looks for:
+            - black exiting left edge
+            - black exiting right edge
+            - both exits at approximately the same Y
+            - black exiting the top edge
+            - top exit reasonably close to the centre
+        """
+
+        left = self._find_edge_run(
+            black_mask,
+            "left",
+        )
+
+        right = self._find_edge_run(
+            black_mask,
+            "right",
+        )
+
+        top = self._find_edge_run(
+            black_mask,
+            "top",
+        )
+
+        result = {
+            "detected": False,
+            "left_y": left["centre"],
+            "right_y": right["centre"],
+            "top_x": top["centre"],
+            "crossing_y": None,
+            "left": left,
+            "right": right,
+            "top": top,
+        }
+
+        if not left["detected"]:
+            return result
+
+        if not right["detected"]:
+            return result
+
+        if not top["detected"]:
+            return result
+
+        side_y_difference = abs(left["centre"] - right["centre"])
+
+        if side_y_difference > self.CROSSING_SIDE_Y_TOLERANCE:
+            return result
+
+        centre_x = self.WIDTH / 2.0
+
+        if abs(top["centre"] - centre_x) > self.CROSSING_TOP_X_TOLERANCE:
+            return result
+
+        result["detected"] = True
+
+        result["crossing_y"] = (left["centre"] + right["centre"]) / 2.0
+
+        return result
+
+    # Line detection
+
+    def _detect_line(
+        self,
+        black_mask,
+        crossing=None,
+    ):
+        """
+        Detect the main line to follow.
+
+        Normal case:
+            PCA over the main contour.
+
+        Horizontal-crossing case:
+            Ignore a band around the detected horizontal line before
+            calculating PCA. This prevents the horizontal component
+            from dominating the direction calculation.
+        """
+
+        h, w = black_mask.shape
+
+        if crossing is None:
+            crossing = {
+                "detected": False,
+                "crossing_y": None,
+                "top_x": None,
+            }
+
+        # Ignore the top ~20% when choosing the line contour.
         roi_start = int(h * 0.2)
 
         roi = black_mask[roi_start:h, :]
@@ -498,13 +938,7 @@ class Follow:
         )
 
         if not contours:
-            return {
-                "detected": False,
-                "angle": 0.0,
-                "offset": 0.0,
-                "points": None,
-                "bottom_only": False,
-            }
+            return self._empty_line_info(crossing)
 
         centre_x = w / 2.0
         bottom_y = roi.shape[0] - 1
@@ -531,36 +965,35 @@ class Follow:
             centre_distance = abs(contour_centre_x - centre_x)
             bottom_distance = abs(bottom_y - contour_bottom)
 
+            # Normal contour scoring
             score = centre_distance * 3.0 + bottom_distance * 1.0 - area * 0.01
+
+            # Prefer vertical lines
+            if crossing["detected"]:
+                top_x = crossing["top_x"]
+
+                if top_x is not None and x <= top_x <= x + cw:
+                    score -= 250.0
+
+                score -= ch * 1.5
 
             if score < best_score:
                 best_score = score
                 best_contour = contour
 
         if best_contour is None:
-            return {
-                "detected": False,
-                "angle": 0.0,
-                "offset": 0.0,
-                "points": None,
-                "bottom_only": False,
-            }
+            return self._empty_line_info(crossing)
 
         points = best_contour.reshape(-1, 2).astype(np.float32)
 
         if len(points) < 12:
-            return {
-                "detected": False,
-                "angle": 0.0,
-                "offset": 0.0,
-                "points": None,
-                "bottom_only": False,
-            }
+            return self._empty_line_info(crossing)
 
         # Convert back to full-frame coordinates
         points[:, 1] += roi_start
 
         # Check if line is fully within lower part of frame
+
         bottom_threshold = h * self.LOWER_LINE_REVERSE_THRESH
 
         min_y = float(np.min(points[:, 1]))
@@ -574,9 +1007,23 @@ class Follow:
             and line_height >= self.BOTTOM_LINE_MIN_HEIGHT
         )
 
-        # PCA gives the dominant direction of the line.
+        # Calculate PCA points
+
+        direction_points = points
+
+        if crossing["detected"]:
+            crossing_y = crossing["crossing_y"]
+
+            if crossing_y is not None:
+                keep = np.abs(points[:, 1] - crossing_y) > self.CROSSING_IGNORE_BAND
+
+                filtered = points[keep]
+
+                if len(filtered) >= 12:
+                    direction_points = filtered
+
         mean, eigenvectors = cv2.PCACompute(
-            points,
+            direction_points,
             mean=None,
         )
 
@@ -585,7 +1032,7 @@ class Follow:
         dx = float(direction[0])
         dy = float(direction[1])
 
-        # direction towards the bottom of the image
+        # Make direction point towards the bottom of the image
         if dy < 0:
             dx *= -1
             dy *= -1
@@ -596,16 +1043,25 @@ class Follow:
         elif angle < -90:
             angle += 180
 
-        # Find where the line is near the bottom of the image
         bottom_start = int(h * self.LOWER_LINE_LIMIT)
 
         bottom_points = points[points[:, 1] >= bottom_start]
+
+        if crossing["detected"]:
+            crossing_y = crossing["crossing_y"]
+
+            if crossing_y is not None:
+                bottom_points = bottom_points[
+                    np.abs(bottom_points[:, 1] - crossing_y) > self.CROSSING_IGNORE_BAND
+                ]
 
         if len(bottom_points) >= 4:
             bottom_center = float(np.mean(bottom_points[:, 0]))
 
             offset = (bottom_center - (w / 2.0)) / (w / 2.0)
+
             offset = float(np.clip(offset, -1.0, 1.0))
+
         else:
             offset = 0.0
 
@@ -614,24 +1070,45 @@ class Follow:
             "angle": float(angle),
             "offset": offset,
             "points": points,
+            "direction_points": direction_points,
             "bottom_only": bottom_only,
+            "crossing": crossing["detected"],
+            "crossing_y": crossing["crossing_y"],
         }
 
-    def _calculate_target_angle(self, line_info):
+    def _empty_line_info(self, crossing=None):
+
+        if crossing is None:
+            crossing = {
+                "detected": False,
+                "crossing_y": None,
+            }
+
+        return {
+            "detected": False,
+            "angle": 0.0,
+            "offset": 0.0,
+            "points": None,
+            "direction_points": None,
+            "bottom_only": False,
+            "crossing": crossing["detected"],
+            "crossing_y": crossing["crossing_y"],
+        }
+
+    # Target angle calculation
+
+    def _calculate_target_angle(
+        self,
+        line_info,
+    ):
         """
         Combine line direction and lateral position.
-
-        Example:
-            line angle = +5 degrees
-            line is 10% right of centre
-
-        -> target a little more to the right.
         """
 
         angle = line_info["angle"]
         offset = line_info["offset"]
 
-        target = angle + (offset * self.OFFSET_GAIN)
+        target = angle + offset * self.OFFSET_GAIN
 
         return float(
             np.clip(
@@ -642,11 +1119,16 @@ class Follow:
         )
 
     def _remember_line(self, line_info):
+        if line_info["bottom_only"]:
+            return
+
         self.last_line_angle = line_info["angle"]
         self.last_line_offset = line_info["offset"]
         self.last_target_angle = self._calculate_target_angle(line_info)
 
         self.last_line_frame = True
+
+    # Green handling
 
     def _get_green_mask(self, frame, downsample=False):
 
@@ -686,10 +1168,8 @@ class Follow:
         )
 
     def _green_present(self, frame):
-        """
-        Cheap test to determine whether there is enough green in the frame
-        to justify running Hough and green contour detection.
-        """
+        """Cheap green test before running the more expensive contour / Hough processing."""
+
         if frame is None:
             return False
 
@@ -703,10 +1183,11 @@ class Follow:
 
         return cv2.countNonZero(green_mask) >= self.GREEN_PIXEL_THRESHOLD
 
+    # Green turn geometry
+
     def _detect_junction_geometry(self, black_mask):
         """
-        Use a small Hough transform to find long horizontal and vertical
-        black lines for special green-marker detection.
+        Use Hough lines for the green-marker geometry.
         """
 
         lines = cv2.HoughLinesP(
@@ -753,7 +1234,7 @@ class Follow:
                         y2,
                     ))
 
-        # longest lines
+        # find the longest lines
         horizontal.sort(reverse=True)
         vertical.sort(reverse=True)
 
@@ -778,10 +1259,7 @@ class Follow:
         }
 
     def _detect_green_squares(self, frame, horizontal_y, vertical_x, green_mask=None):
-        """
-        Detect green squares that are below a black line (valid green turns).
-        """
-
+        """Detect green squares that are below a black line (valid green turns)."""
         if green_mask is None:
             green_mask = self._get_green_mask(frame)
 
@@ -848,7 +1326,6 @@ class Follow:
         green_right = False
 
         if horizontal_y is not None and vertical_x is not None:
-            # Small tolerance around vertical line
             tolerance = 5
 
             for cx, cy, area in centres:
@@ -878,7 +1355,7 @@ class Follow:
         if not horizontal_exists or not vertical_exists:
             return None
 
-        # Both sides = uturn
+        # Both sides = U-turn
         if left and right:
             return LineFollowResult(
                 target_angle=180.0,
@@ -921,8 +1398,12 @@ class Follow:
 
         return None
 
+    # Stuck handling
+
     def _update_same_frame_counter(self, frame):
-        """Check if the camera frame has changed substantially or not."""
+        """
+        Check whether camera frames are essentially identical.
+        """
 
         gray = cv2.cvtColor(
             frame,
@@ -956,7 +1437,11 @@ class Follow:
 
         return self.same_frame_frames
 
-    def _make_debug_frame(self, frame, black_mask, line_info, geometry, green_info, result):
+    # Debug camera frame
+
+    def _make_debug_frame(
+        self, frame, black_mask, line_info, crossing, geometry, green_info, result
+    ):
         debug = frame.copy()
 
         for line in geometry["horizontal"]:
@@ -1003,6 +1488,33 @@ class Follow:
                 1,
             )
 
+        if crossing["detected"]:
+            crossing_y = crossing["crossing_y"]
+
+            top_x = crossing["top_x"]
+
+            if crossing_y is not None:
+                y = int(crossing_y)
+
+                cv2.line(
+                    debug,
+                    (0, y),
+                    (self.WIDTH - 1, y),
+                    (0, 255, 255),
+                    2,
+                )
+
+            if top_x is not None:
+                x = int(top_x)
+
+                cv2.line(
+                    debug,
+                    (x, 0),
+                    (x, self.HEIGHT - 1),
+                    (0, 255, 255),
+                    1,
+                )
+
         for cx, cy, area in green_info["centres"]:
             cv2.circle(
                 debug,
@@ -1019,6 +1531,16 @@ class Follow:
                     (int(x), int(y)),
                     1,
                     (0, 0, 255),
+                    -1,
+                )
+
+        if line_info.get("direction_points") is not None:
+            for x, y in line_info["direction_points"][::4]:
+                cv2.circle(
+                    debug,
+                    (int(x), int(y)),
+                    2,
+                    (255, 0, 0),
                     -1,
                 )
 
@@ -1039,6 +1561,7 @@ class Follow:
             (255, 255, 255),
             1,
         )
+
         cv2.putText(
             debug,
             f"angle: {result.target_angle:.1f}",
@@ -1048,19 +1571,68 @@ class Follow:
             (255, 255, 255),
             1,
         )
+
         cv2.putText(
             debug,
-            f"gap: {result.gap_frames}",
+            f"line: {result.line_angle:.1f}",
             (3, 38),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.35,
             (255, 255, 255),
             1,
         )
+
         cv2.putText(
             debug,
-            f"same: {result.same_frame_frames}",
+            f"offset: {result.line_offset:.2f}",
             (3, 51),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (255, 255, 255),
+            1,
+        )
+
+        cv2.putText(
+            debug,
+            f"gap: {result.gap_frames}",
+            (3, 64),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (255, 255, 255),
+            1,
+        )
+
+        cv2.putText(
+            debug,
+            f"bottom: {result.bottom_only_frames}",
+            (3, 77),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (255, 255, 255),
+            1,
+        )
+
+        status = []
+
+        if result.horizontal_crossing:
+            status.append("CROSS")
+
+        if result.bottom_only:
+            status.append("BOTTOM")
+
+        if result.sharp_bend:
+            status.append("BEND")
+
+        if result.gap_detected:
+            status.append("GAP")
+
+        if result.recovering:
+            status.append("RECOVER")
+
+        cv2.putText(
+            debug,
+            " ".join(status),
+            (3, 90),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.35,
             (255, 255, 255),
@@ -1069,52 +1641,24 @@ class Follow:
 
         return debug
 
+    # Line in frame for water tower
+
     def lineInFrame(self) -> bool:
+
         frame = self.cropped_frame
 
         if frame is None:
             return False
 
-        line = cv2.inRange(frame, (0, 0, 0), (45, 45, 45))
+        line = cv2.inRange(
+            frame,
+            (0, 0, 0),
+            (45, 45, 45),
+        )
+
         return cv2.countNonZero(line) > 5000
 
-    def red_detected(self, image):
-        if image is None:
-            return False
-
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-        # Red has two ranges in HSV because hue wraps around at 180
-        mask1 = cv2.inRange(hsv, np.array([0, 100, 100]), np.array([10, 255, 255]))
-        mask2 = cv2.inRange(hsv, np.array([170, 100, 100]), np.array([180, 255, 255]))
-        red_mask = mask1 | mask2
-
-        # Create 5x5 rectangular kernel
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-
-        # Morphological opening
-        red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel)
-
-        red_pixels = cv2.countNonZero(red_mask)
-
-        if red_pixels >= 50:
-            self.logger.info(f"Px: {red_pixels}")
-        if red_pixels >= self.MIN_RED:
-            return True
-
-        # Find external contours
-        contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        for contour in contours:
-            area = cv2.contourArea(contour)
-
-            if area >= 100:
-                self.logger.info(f"Area: {area}")
-
-            if area >= self.MIN_RED:
-                return True
-
-        return False
+    # Main loop
 
     def main(self):
         now = time.monotonic()
@@ -1158,13 +1702,16 @@ class Follow:
                 self.last_error = 0
                 self.recovering = False
                 self.bottom_recovering = False
+                self.bottom_only_frames = 0
                 self.in_gap = False
                 self.no_line_frames = 0
                 self.last_line_frame = None
                 self.gap_frames = 0
                 self.same_frame_frames = 0
+
                 self.task_started = True
 
+            # Rescue detection before line processing
             if self.red_detected(c_frame):
                 self.logger.info("Red detected")
                 self._transition_to(Task.RESCUE)
@@ -1177,6 +1724,7 @@ class Follow:
 
             if result.action == "FOLLOW":
                 error_pid = self.pid.update(result.target_angle, dt)
+
                 turn_error = np.clip(
                     error_pid,
                     -self.MAX_TURN,
@@ -1190,6 +1738,7 @@ class Follow:
                 speed_scale = 1.0 / (1.0 + turn_factor * turn_strength**2)
                 velocity = self.VELOCITY * speed_scale
 
+                # At very large steering errors, turn on the spot
                 if turn_strength > 0.9:
                     velocity = 0
 
@@ -1203,7 +1752,7 @@ class Follow:
 
             elif result.action == "FORWARD":
                 self.logger.info("Moving forward")
-                self.robot.drive_PID(self.VELOCITY * 0.5, 0)
+                self.robot.drive_PID(int(self.VELOCITY * 0.5), 0)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
