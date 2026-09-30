@@ -25,7 +25,7 @@ class Robot:
         self.servo_lift = ServoController(self.i2c_controller, servo_id=1, gpio_pin=0)
         self.servo_tray_release = ServoController(self.i2c_controller, servo_id=2, gpio_pin=1)
 
-        self.limit_switch = Button(27, pull_up=False)
+        self.limit_switch = Button(27, pull_up=True, bounce_time=0.05)
 
         self.limit_switch_triggered = False
 

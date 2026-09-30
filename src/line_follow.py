@@ -97,7 +97,7 @@ class Follow:
     BOTTOM_LINE_MIN_HEIGHT = 4
 
     MAX_TURN = 500
-    KP = 6.0
+    KP = 5.5
     KI = 0.0
     KD = 0.2
 
@@ -1138,6 +1138,7 @@ class Follow:
         self.last_time = now
 
         if self.robot.limit_switch_pressed():
+            self.logger.info("Limit switch pressed")
             self.robot.stop_moving()
             self._transition_to(Task.TOWER)
 
@@ -1192,7 +1193,7 @@ class Follow:
                 turn_strength = abs(turn_error) / self.MAX_TURN
 
                 # Makes robot slow on large error values
-                turn_factor = 1.5  # Larger value = slows down more at larger angles
+                turn_factor = 1.6  # Larger value = slows down more at larger angles
                 speed_scale = 1.0 / (1.0 + turn_factor * turn_strength**2)
                 velocity = self.VELOCITY * speed_scale
 
@@ -1216,9 +1217,9 @@ class Follow:
 
                 self.robot.drive_dist_enc(70, 600)
                 time.sleep(1)
-                self.robot.spin_enc(result.target_angle, 500)
+                self.robot.spin_enc(result.target_angle - 20, 500)
                 time.sleep(3)
-                self.robot.drive_dist_enc(50, 400)
+                self.robot.drive_dist_enc(30, 400)
 
                 self.pid.reset()
                 self.last_time = None
