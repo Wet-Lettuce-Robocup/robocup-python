@@ -1150,9 +1150,12 @@ class Follow:
             if not self.task_started:
                 self.task_started = True
 
-                self.robot.spin_enc(90)
+                self.robot.drive_dist_enc(-50, 300)
+                time.sleep(1.5)
+
+                self.robot.spin_enc(90, 550)
                 time.sleep(3)
-                self.robot.drive_dist(30, -10, 40)  # to tune
+                self.robot.drive_PID(600, -490)
                 time.sleep(5)
                 self.robot.drive_PID(200)
 
