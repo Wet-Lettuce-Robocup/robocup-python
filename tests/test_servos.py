@@ -22,28 +22,17 @@ class TestServos:
         return True
 
     def test(self):
-        self.servo_grab.set_angle(30)
-        sleep(1)
-        self.servo_grab.set_angle(40)
-        sleep(1)
-        self.servo_grab.set_angle(50)
-        sleep(1)
-        self.servo_grab.set_angle(60)
-        sleep(1)
-        self.servo_grab.set_angle(70)
-        sleep(1)
-        self.servo_grab.set_angle(80)
-        sleep(1)
-        self.servo_grab.set_angle(90)
-        sleep(1)
-        self.servo_grab.set_angle(100)
-        sleep(1)
+        for i in range(3, 10):
+            angle = 10 * i
+            self.servo_grab.set_angle(angle)
+            print(angle)
+            sleep(1)
 
 
 run = TestServos()
 try:
     run.test()
-except Exception as e:
-    print(str(e))
+except KeyboardInterrupt:
+    pass
 finally:
     run.disable_servos()
