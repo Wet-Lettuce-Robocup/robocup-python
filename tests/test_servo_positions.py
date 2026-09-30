@@ -21,14 +21,21 @@ class TestServos:
         return True
 
     def test(self):
+        self.robot.tray("reset")
+        sleep(0.5)
+        self.robot.claw("grab")
+        sleep(1)
         self.robot.lift("up")
         sleep(1)
-        self.robot.lift("down")
-        sleep(1)
+
         self.robot.claw("release")
         sleep(1)
         self.robot.claw("grab")
         sleep(1)
+
+        self.robot.lift("down")
+        sleep(1)
+
         self.robot.tray("release")
         sleep(1)
         self.robot.tray("reset")

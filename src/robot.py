@@ -212,10 +212,10 @@ class Robot:
     def lift(self, action):
         """Action: "up" or "down"."""
         if action == "up":
-            self.servo_lift.set_angle(155)
+            self.servo_lift.set_angle(158)
             time.sleep(0.5)
         elif action == "down":
-            self.servo_lift.set_angle(23)
+            self.servo_lift.set_angle(30)
             time.sleep(0.5)
 
     def tray(self, action):
