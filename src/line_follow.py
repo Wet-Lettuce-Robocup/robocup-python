@@ -56,7 +56,7 @@ class Follow:
     DEBUG = True
 
     VELOCITY = 280
-    MIN_RED_AREA = 2000.0
+    MIN_RED = 200
 
     WIDTH = 200
     HEIGHT = 100
@@ -68,7 +68,7 @@ class Follow:
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
 
-    BLACK_THRESH = 65
+    BLACK_THRESH = 60
 
     GREEN_H_LOW = 35
     GREEN_H_HIGH = 90
@@ -390,36 +390,18 @@ class Follow:
                 self.in_gap = True
                 self.gap_frames += 1
 
-                if self.gap_frames <= self.GAP_LIMIT:
-                    result = LineFollowResult(
-                        target_angle=self.last_target_angle,
-                        action="FORWARD",
-                        line_detected=False,
-                        gap_detected=True,
-                        recovering=False,
-                        no_line_frames=self.no_line_frames,
-                        gap_frames=self.gap_frames,
-                        same_frame_frames=same_frame,
-                        last_line_angle=self.last_line_angle,
-                        last_line_offset=self.last_line_offset,
-                    )
-
-                else:
-                    # Gap too big -> reverse to previous line
-                    self.recovering = True
-
-                    result = LineFollowResult(
-                        target_angle=self.last_target_angle,
-                        action="REVERSE",
-                        line_detected=False,
-                        gap_detected=True,
-                        recovering=True,
-                        no_line_frames=self.no_line_frames,
-                        gap_frames=self.gap_frames,
-                        same_frame_frames=same_frame,
-                        last_line_angle=self.last_line_angle,
-                        last_line_offset=self.last_line_offset,
-                    )
+                result = LineFollowResult(
+                    target_angle=0,
+                    action="FORWARD",
+                    line_detected=False,
+                    gap_detected=True,
+                    recovering=False,
+                    no_line_frames=self.no_line_frames,
+                    gap_frames=self.gap_frames,
+                    same_frame_frames=same_frame,
+                    last_line_angle=self.last_line_angle,
+                    last_line_offset=self.last_line_offset,
+                )
 
             # No previous line
             else:
@@ -1108,25 +1090,31 @@ class Follow:
         red_mask = mask1 | mask2
 
         # Create 5x5 rectangular kernel
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 
         # Morphological opening
         red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel)
 
+        red_pixels = cv2.countNonZero(red_mask)
+
+        if red_pixels >= 50:
+            self.logger.info(f"Px: {red_pixels}")
+        if red_pixels >= self.MIN_RED:
+            return True
+
         # Find external contours
         contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        red_detected = False
 
         for contour in contours:
             area = cv2.contourArea(contour)
 
-            if area < self.MIN_RED_AREA:
-                continue
+            if area >= 100:
+                self.logger.info(f"Area: {area}")
 
-            red_detected = True
+            if area >= self.MIN_RED:
+                return True
 
-        return red_detected
+        return False
 
     def main(self):
         now = time.monotonic()
@@ -1215,7 +1203,7 @@ class Follow:
 
             elif result.action == "FORWARD":
                 self.logger.info("Moving forward")
-                self.robot.drive_PID(self.VELOCITY * 0.5, self.last_error)
+                self.robot.drive_PID(self.VELOCITY * 0.5, 0)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
