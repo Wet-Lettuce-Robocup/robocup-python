@@ -1137,7 +1137,11 @@ class Follow:
 
         self.last_time = now
 
-        if self.robot.limit_switch_pressed():
+        self.raw_frame, self.cropped_frame = self.camera.get_frame()
+        r_frame = self.raw_frame
+        c_frame = self.cropped_frame
+
+        if self.robot.limit_switch_pressed() and self.follow_status != Task.TOWER:
             self.logger.info("Limit switch pressed")
             self.robot.stop_moving()
             self._transition_to(Task.TOWER)
@@ -1167,10 +1171,6 @@ class Follow:
                 self.gap_frames = 0
                 self.same_frame_frames = 0
                 self.task_started = True
-
-            self.raw_frame, self.cropped_frame = self.camera.get_frame()
-            r_frame = self.raw_frame
-            c_frame = self.cropped_frame
 
             if self.red_detected(c_frame):
                 self.logger.info("Red detected")
