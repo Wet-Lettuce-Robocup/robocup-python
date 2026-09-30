@@ -43,11 +43,11 @@ class ServoController:
         """
         Set the servo position.
 
-        :param angle: Servo angle in radians.
+        :param angle: Servo angle in degrees.
         :return: True if the command was sent successfully.
         """
 
-        degrees = int(self.rads_to_degrees(angle))
+        degrees = int(angle)
         degrees = max(0, min(degrees, 180))
 
         # Enable servo power
