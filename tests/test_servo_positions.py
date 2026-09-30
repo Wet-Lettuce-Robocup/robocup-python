@@ -1,16 +1,14 @@
 from time import sleep
 
 from components.i2c_controller import I2CBusController
-from components.servo_controller import ServoController
 from robot import Robot
 
 
 class TestServos:
     def __init__(self):
         self.i2c_controller = I2CBusController()
-        self.servo_grab = ServoController(self.i2c_controller, servo_id=0, gpio_pin=4)
-        self.servo_lift = ServoController(self.i2c_controller, servo_id=1, gpio_pin=0)
-        self.servo_tray_release = ServoController(self.i2c_controller, servo_id=2, gpio_pin=1)
+
+        self.robot = Robot(self.i2c_controller)
 
     def disable_servos(self) -> None:
         """Disable power to the servos."""
@@ -23,11 +21,17 @@ class TestServos:
         return True
 
     def test(self):
-        for i in range(3, 10):
-            angle = 10 * i
-            self.servo_grab.set_angle(angle)
-            print(angle)
-            sleep(1)
+        self.robot.lift("down")
+        sleep(1)
+        self.robot.lift("up")
+        sleep(1)
+        self.robot.claw("grab")
+        sleep(1)
+        self.robot.claw("release")
+        sleep(1)
+        self.robot.tray("release")
+        sleep(1)
+        self.robot.tray("reset")
 
 
 run = TestServos()
