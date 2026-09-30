@@ -1220,11 +1220,11 @@ class Follow:
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 self.logger.info(f"Green turn detected {result.action}")
 
-                self.robot.drive_dist_enc(70, 600)
-                time.sleep(1)
+                self.robot.drive_dist_enc(60, 600)
+                time.sleep(0.8)
                 self.robot.spin_enc(result.target_angle - 20, 500)
-                time.sleep(3)
-                self.robot.drive_dist_enc(30, 400)
+                time.sleep(2.5)
+                self.robot.drive_dist_enc(20, 400)
 
                 self.pid.reset()
                 self.last_time = None

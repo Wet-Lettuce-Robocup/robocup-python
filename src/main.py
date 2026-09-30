@@ -141,6 +141,11 @@ class Main:
                         continue
 
                     self.task_started = True
+
+                    self.robot.claw("grab")
+                    self.robot.lift("up")
+                    self.robot.tray("reset")
+
                     self._transition_to(Task.IDLE)
 
                 elif self.current_task == Task.IDLE:
