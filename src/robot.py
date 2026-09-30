@@ -129,6 +129,8 @@ class Robot:
         angular_time = abs(angle) / abs(velocity) if velocity != 0 and angle != 0 else 0.0
         time_required = max(linear_time, angular_time)
 
+        self.logger.info(f"Time for drive dist: {time_required}")
+
         if time_required <= 0.0:
             self.logger.warning("Ignoring drive called with zero distance and angle")
             return

@@ -1151,7 +1151,9 @@ class Follow:
                 self.task_started = True
 
                 self.robot.spin_enc(90)
+                time.sleep(3)
                 self.robot.drive_dist(30, -10, 40)  # to tune
+                time.sleep(5)
                 self.robot.drive_PID(200)
 
             if self.lineInFrame():
