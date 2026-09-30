@@ -227,15 +227,15 @@ class Robot:
             self.servo_tray_release.set_angle(46)
             time.sleep(0.5)
 
-    def relax_servos(self):
-        self.servo_grab.disable()
-        self.servo_lift.disable()
-        self.servo_tray_release.disable()
+    def disable_servos(self) -> None:
+        """Disable power to the servos."""
+        write_response = self.i2c_controller.handle_write(self.STM_ADDR, 0x14)
 
-    def cleanup_servos(self):
-        self.servo_grab.cleanup()
-        self.servo_lift.cleanup()
-        self.servo_tray_release.cleanup()
+        if not write_response["success"]:
+            self.logger.error(f"Servo stop command failed: {write_response['message']}")
+            return False
+
+        return True
 
     def limit_switch_pressed(self):
         """Returns True if limit switch is pressed in that moment."""

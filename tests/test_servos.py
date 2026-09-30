@@ -11,20 +11,33 @@ class TestServos:
         self.servo_lift = ServoController(self.i2c_controller, servo_id=1, gpio_pin=0)
         self.servo_tray_release = ServoController(self.i2c_controller, servo_id=2, gpio_pin=1)
 
-    def relax_servos(self):
-        self.servo_grab.disable()
-        self.servo_lift.disable()
-        self.servo_tray_release.disable()
+    def disable_servos(self) -> None:
+        """Disable power to the servos."""
+        write_response = self.i2c_controller.handle_write(0x67, 0x14)
 
-    def cleanup_servos(self):
-        self.servo_grab.cleanup()
-        self.servo_lift.cleanup()
-        self.servo_tray_release.cleanup()
+        if not write_response["success"]:
+            self.logger.error(f"Servo stop command failed: {write_response['message']}")
+            return False
+
+        return True
 
     def test(self):
-        self.servo_grab.set_angle(54)
+        self.servo_grab.set_angle(30)
         sleep(1)
-        self.relax_servos()
+        self.servo_grab.set_angle(40)
+        sleep(1)
+        self.servo_grab.set_angle(50)
+        sleep(1)
+        self.servo_grab.set_angle(60)
+        sleep(1)
+        self.servo_grab.set_angle(70)
+        sleep(1)
+        self.servo_grab.set_angle(80)
+        sleep(1)
+        self.servo_grab.set_angle(90)
+        sleep(1)
+        self.servo_grab.set_angle(100)
+        sleep(1)
 
 
 run = TestServos()
@@ -33,4 +46,4 @@ try:
 except Exception as e:
     print(str(e))
 finally:
-    run.cleanup_servos()
+    run.disable_servos()
