@@ -64,8 +64,6 @@ class Main:
         self.target_rescue_loop_time = None
         self.target_line_follow_loop_time = None
 
-        self.ball_tray_memory = None
-
     def _transition_to(self, task):
         if self.current_task == task:
             return
@@ -137,8 +135,7 @@ class Main:
 
                 if self.current_task == Task.INIT:
                     if self.task_started:
-                        time.sleep(0.05)
-                        continue
+                        pass
 
                     self.task_started = True
 
@@ -149,7 +146,7 @@ class Main:
                     self._transition_to(Task.IDLE)
 
                 elif self.current_task == Task.IDLE:
-                    time.sleep(0.05)
+                    pass
 
                 elif self.current_task == Task.RESCUE:
                     if not self.task_started:
@@ -163,12 +160,11 @@ class Main:
                         )
 
                         self.rescue_thread.start()
-
-                        if self.ball_tray_memory is not None:
-                            self.rescue.set_memory(self.ball_tray_memory)
+                        self.rescue.reset()
 
                     # Wait until the worker has stopped
                     elif not self.rescue_thread.is_alive():
+                        self.rescue.reset()
                         if self.rescue.is_finished():
                             self.logger.info("Rescue finished")
                             self._transition_to(Task.FOLLOW)
@@ -189,6 +185,7 @@ class Main:
                         )
 
                         self.follow_thread.start()
+                        self.follow.reset()
 
                     # Debug display
                     if self.follow.DEBUG:
@@ -200,6 +197,7 @@ class Main:
 
                     if not self.follow_thread.is_alive():
                         cv2.destroyAllWindows()
+                        self.follow.reset()
                         if self.follow.is_finished():
                             self.logger.info("Line follow finished")
                             self._transition_to(Task.RESCUE)

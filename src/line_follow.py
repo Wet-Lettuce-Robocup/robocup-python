@@ -13,7 +13,7 @@ class Task(Enum):
     INIT = 0
     FOLLOW = 1
     TOWER = 2
-    RESCUE = 3
+    EXIT = 3
 
 
 @dataclass
@@ -152,6 +152,8 @@ class Follow:
         self.follow_status = Task.INIT
         self.task_started = False
 
+        self.finished = False
+
         # Last reliable line
         self.last_line_angle = 0.0
         self.last_line_offset = 0.0
@@ -208,6 +210,9 @@ class Follow:
             cv2.MORPH_ELLIPSE,
             (3, 3),
         )
+
+    def reset(self):
+        self.follow_status = Task.INIT
 
     def _transition_to(self, task):
         self.logger.info(f"Task: {self.follow_status.name} -> {task.name}")
@@ -1714,7 +1719,7 @@ class Follow:
             # Rescue detection before line processing
             if self.red_detected(c_frame):
                 self.logger.info("Red detected")
-                self._transition_to(Task.RESCUE)
+                self._transition_to(Task.EXIT)
                 return
 
             result = self.process_line(r_frame, c_frame, debug=self.DEBUG)
@@ -1782,11 +1787,52 @@ class Follow:
 
         elif self.follow_status == Task.INIT:
             if not self.task_started:
-                self._transition_to(Task.FOLLOW)
                 self.task_started = True
 
+                self.raw_frame = None
+                self.cropped_frame = None
+
+                self.startTime = time.monotonic()
+
+                self.finished = False
+
+                self.last_line_angle = 0.0
+                self.last_line_offset = 0.0
+                self.last_line_frame = None
+
+                self.in_gap = False
+                self.recovering = False
+
+                self.bottom_recovering = False
+                self.bottom_only_frames = 0
+
+                self.previous_frame = None
+
+                self.last_green_centres = []
+
+                self.no_line_frames = 0
+                self.gap_frames = 0
+                self.same_frame_frames = 0
+
+                self.last_time = None
+                self.last_error = 0
+                self.last_target_angle = 0.0
+
+                self.debug_frame = None
+
+                self.pid.reset()
+
+                self._transition_to(Task.FOLLOW)
+
+        elif self.follow_status == Task.EXIT:
+            if not self.task_started:
+                self.task_started = True
+                self.raw_frame = None
+                self.cropped_frame = None
+                self.finished = True
+
     def is_finished(self):
-        return self.follow_status == Task.RESCUE
+        return self.finished
 
 
 class PID:

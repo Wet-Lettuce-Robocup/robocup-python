@@ -52,6 +52,9 @@ class Rescue:
 
         time.sleep(2)  # To let Ultralytics init
 
+    def reset(self):
+        self.current_task = Task.ENTER
+
     def _transition_to(self, task):
         """Change to a new rescue task."""
         self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
@@ -130,7 +133,7 @@ class Rescue:
         else:
             if time.monotonic() < self.scan_timeout:
                 self.logger.info("Scan timeout reached: no more balls have been detected.")
-            self.logger.info("All balls rescued.")
+            self.logger.info(f"All balls rescued: Silver = {silver_found}, Black = {black_found}")
             self.is_targetting_balls = False
             return []
 
@@ -157,6 +160,7 @@ class Rescue:
         if not evac_positions:
             return []
 
+        self.logger.info(f"Evac positions: {evac_positions}")
         # Separate green and red detections
         green = [position for position in evac_positions if position["cls"] == "green"]
         red = [position for position in evac_positions if position["cls"] == "red"]
@@ -199,15 +203,17 @@ class Rescue:
         dist = self.robot.get_front_distance()  # it's in mm btw
 
         if 200 < dist < 1000:
-            self.robot.drive_dist((dist / 1000) / 2)
+            self.robot.drive_dist_enc(dist / 2)
         else:
             self.logger.warning("Front dist not valid, driving 40cm anyway")
-            self.robot.drive_dist(0.4)
+            self.robot.drive_dist_enc(400)
+        time.sleep(3)
 
         left_dist = self.robot.get_side_distance()
         if 0 < left_dist < 300:
-            self.robot.spin(90)
-            self.robot.drive_dist(0.3)
+            self.robot.spin_enc(45, 500)
+            time.sleep(2)
+            self.robot.drive_dist_enc(300)
 
     def grab_ball(self):
         if self.target_ball is None:
@@ -347,6 +353,18 @@ class Rescue:
                 return
 
             self.task_started = True
+
+            self.target_ball = None
+            self.target_evac_point = None
+
+            self.silver_timeout = None
+            self.scan_timeout = None
+
+            self.is_targetting_balls = True
+            self.green_found = False
+            self.red_found = False
+            self.exit_found = False
+
             self.enter_rescue()
             self._transition_to(Task.START_SCAN)
 
@@ -561,4 +579,6 @@ class Rescue:
     def exit(self):
         self.vision.close()
         self.led.set_brightness(0)
-        return self.ball_storage
+        self.robot.claw("grab")
+        self.robot.lift("up")
+        self.robot.tray("reset")
