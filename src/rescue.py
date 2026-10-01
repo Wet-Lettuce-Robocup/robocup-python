@@ -36,7 +36,6 @@ class Rescue:
         self.target_ball = None
         self.target_evac_point = None
 
-        self.silver_timeout = None
         self.scan_timeout = None
 
         self.is_targetting_balls = True
@@ -75,7 +74,7 @@ class Rescue:
         return silver_count, black_count
 
     def tray_handler(self, action, colour=None):
-        """grab or release"""
+        """grab, release or dump"""
 
         current_storage = self.ball_storage
         if action == "release":
@@ -100,6 +99,23 @@ class Rescue:
                     self.logger.error("Colour is not correct in tray_handler")
             else:
                 self.logger.warning("why is there something in the claw man")
+        elif action == "dump":
+            # tray_1 and tray_2 -> none if both silver
+            # tray_1 black and tray_2 empty -> tray_1 empty
+            # evac points basically
+            if current_storage["tray_1"] == "silver" and current_storage["tray_2"] == "silver":
+                self.ball_storage["tray_1"] = None
+                self.ball_storage["tray_2"] = None
+                self.logger.info("Emptying tray of 2 silver balls")
+            elif current_storage["tray_1"] == "black" and current_storage["tray_2"] == None:
+                self.ball_storage["tray_1"] = None
+                self.logger.info("Emptying tray of 1 black ball")
+            else:
+                self.logger.warning("Uh oh edge case")
+
+        self.logger.info(
+            f"Claw: {self.ball_storage['claw']}, Tray 1: {self.ball_storage['tray_1']}, Tray 2: {self.ball_storage['tray_2']}"
+        )
 
     def locate_targets(self, target):
         all_objects = self.vision.get_all_objects()
@@ -127,22 +143,23 @@ class Rescue:
     def scan_for_balls(self):
         silver_found, black_found = self._count_balls()
 
-        if silver_found < 2 and time.monotonic() < self.silver_timeout:
-            target_colour = "silver"
-            # self.target_ball("silver")
-        elif black_found < 1 and time.monotonic() < self.scan_timeout:
-            target_colour = "black"
-            # self.target_ball("black")
-        else:
-            if time.monotonic() < self.scan_timeout:
-                self.logger.info("Scan timeout reached: no more balls have been detected.")
-                self.robot.drive_PID(300, 50)
-                time.sleep(3)
-                self.robot.stop_moving()
+        if time.monotonic() > self.scan_timeout:
+            self.logger.info("Scan timeout reached, moving to find more balls")
+            self.robot.drive_PID(300, 100)
+            time.sleep(1.5)
+            self.robot.stop_moving()
+            return []
 
+        elif silver_found == 2 and black_found == 1:
             self.logger.info(f"All balls rescued: Silver = {silver_found}, Black = {black_found}")
             self.is_targetting_balls = False
             return []
+
+        elif silver_found < 2:
+            target_colour = "silver"
+
+        elif black_found < 1:
+            target_colour = "black"
 
         ball_positions = self.locate_targets("ball")
 
@@ -172,21 +189,33 @@ class Rescue:
         green = [position for position in evac_positions.values() if position["cls"] == "green"]
         red = [position for position in evac_positions.values() if position["cls"] == "red"]
 
-        if not self.green_found and green:
+        target = self.get_target_evac_point()
+
+        if target == "green" and green:
             return green
-        if not self.red_found and red:
+        if target == "red" and red:
             return red
 
         return []
 
+    def get_target_evac_point(self):
+        tray_1 = self.ball_storage["tray_1"]
+        tray_2 = self.ball_storage["tray_2"]
+
+        if tray_1 == "silver" and tray_2 == "silver":
+            return "green"
+        elif tray_1 == "red":
+            return "red"
+        return ""
+
     def rotate_to_target(self, angle):
-        if abs(angle) < 2:
+        if abs(angle) < 5:
             self.logger.info(f"Target angle {angle:.1f}°, no rotation required")
             return
 
         self.logger.info(f"Rotating {angle:.1f}° towards target")
 
-        self.robot.spin_enc(angle)
+        self.robot.spin_enc(angle, 200)
         time.sleep(5)
 
     def move_to_target(self, distance):
@@ -195,7 +224,7 @@ class Rescue:
             return
 
         self.logger.info(f"Driving {distance:.2f}m towards target")
-        self.robot.drive_dist_enc(distance * 1000, 500)
+        self.robot.drive_dist_enc(distance * 1000, 300)
         time.sleep(5)
 
     def enter_rescue(self):
@@ -236,7 +265,7 @@ class Rescue:
         colour = self.target_ball["cls"]
         self.logger.info(f"Grabbing {colour} ball")
 
-        self.robot.drive_dist_enc(150, velocity=300)
+        self.robot.drive_dist_enc(50, velocity=250)
         time.sleep(4)
 
         self.robot.claw("grab")
@@ -247,8 +276,6 @@ class Rescue:
         self.logger.info(f"Claw distance after grab: {claw_distance}mm")
 
         self.tray_handler("grab", colour)
-
-        self.logger.info(f"Ball storage: {self.ball_storage}")
 
         # Reverse away from the ball.
         self.robot.drive_dist_enc(-150, 400)
@@ -278,15 +305,22 @@ class Rescue:
         self.robot.drive_dist_enc(-150, 400)
         time.sleep(4)
 
-        # Red evacuation point requires opening the claw before releasing the tray.
-        if colour == "red":
-            self.robot.claw("release")
-
         self.robot.tray("release")
         time.sleep(3)
         self.robot.tray("reset")
 
-        self.robot.claw("grab")
+        self.robot.drive_dist_enc(300, 400)
+
+        if (
+            self.ball_storage["tray_1"] == self.ball_storage["tray_2"]
+            or self.ball_storage["claw"] is not None
+        ):
+            # Released two balls
+            self.robot.claw("release")
+            time.sleep(1)
+            self.robot.claw("grab")
+
+        self.tray_handler("release")
 
         self.target_evac_point = None
 
@@ -380,7 +414,6 @@ class Rescue:
             self.target_ball = None
             self.target_evac_point = None
 
-            self.silver_timeout = None
             self.scan_timeout = None
 
             self.is_targetting_balls = True
@@ -405,10 +438,8 @@ class Rescue:
             first_run = False
             if not self.task_started:
                 first_run = True
-                # Timeout of 50 seconds if no silver
-                self.silver_timeout = time.monotonic() + 50
-                # Timeout of 70 seconds if no black or silver
-                self.scan_timeout = time.monotonic() + 70
+                # Timeout of 60 seconds if no black or silver
+                self.scan_timeout = time.monotonic() + 60
 
             self.task_started = True
 
