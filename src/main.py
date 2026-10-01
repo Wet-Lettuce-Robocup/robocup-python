@@ -68,7 +68,7 @@ class Main:
         if self.current_task == task:
             return
 
-        self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
+        self.logger.info(f"Main task: {self.current_task.name} -> {task.name}")
 
         self.current_task = task
         self.task_started = False
@@ -153,6 +153,8 @@ class Main:
                         self.task_started = True
                         self.reset_stop()
 
+                        self.rescue.reset()
+
                         self.rescue_thread = threading.Thread(
                             target=self.rescue_loop,
                             daemon=True,
@@ -160,16 +162,24 @@ class Main:
                         )
 
                         self.rescue_thread.start()
-                        self.rescue.reset()
+
+                    # Debug display
+                    if self.rescue.DEBUG:
+                        debug_frame = self.rescue.get_debug_frame()
+
+                        if debug_frame is not None:
+                            cv2.imshow("Debug", debug_frame)
+                            cv2.waitKey(1)
 
                     # Wait until the worker has stopped
-                    elif not self.rescue_thread.is_alive():
-                        self.rescue.reset()
+                    if not self.rescue_thread.is_alive():
+                        cv2.destroyAllWindows()
                         if self.rescue.is_finished():
                             self.logger.info("Rescue finished")
                             self._transition_to(Task.FOLLOW)
                         else:
                             self._transition_to(Task.IDLE)
+                        self.rescue.reset()
 
                     time.sleep(0.05)
 
@@ -178,6 +188,8 @@ class Main:
                         self.task_started = True
                         self.reset_stop()
 
+                        self.follow.reset()
+
                         self.follow_thread = threading.Thread(
                             target=self.follow_loop,
                             daemon=True,
@@ -185,7 +197,6 @@ class Main:
                         )
 
                         self.follow_thread.start()
-                        self.follow.reset()
 
                     # Debug display
                     if self.follow.DEBUG:
@@ -197,12 +208,12 @@ class Main:
 
                     if not self.follow_thread.is_alive():
                         cv2.destroyAllWindows()
-                        self.follow.reset()
                         if self.follow.is_finished():
                             self.logger.info("Line follow finished")
                             self._transition_to(Task.RESCUE)
                         else:
                             self._transition_to(Task.IDLE)
+                        self.follow.reset()
 
                     time.sleep(0.05)
 
@@ -210,43 +221,54 @@ class Main:
                 self.logger.error(f"Caught an error in main loop! {e}")
 
     def rescue_loop(self):
+        try:
+            while not self.stop_event.is_set():
+                self.target_rescue_loop_time = time.monotonic() + (
+                    1 / self.RESCUE_LOOPS_PER_SECOND
+                )
 
-        while not self.stop_event.is_set():
-            self.target_rescue_loop_time = time.monotonic() + (1 / self.RESCUE_LOOPS_PER_SECOND)
+                self.rescue.tick_rescue()
 
-            self.rescue.tick_rescue()
+                if self.rescue.is_finished():
+                    break
 
-            now = time.monotonic()
+                now = time.monotonic()
 
-            if now < self.target_rescue_loop_time:
-                time.sleep(self.target_rescue_loop_time - now)
+                if now < self.target_rescue_loop_time:
+                    time.sleep(self.target_rescue_loop_time - now)
 
-        self.robot.stop_moving()
+            self.robot.stop_moving()
 
-        self.ball_tray_memory = self.rescue.exit()
+            self.ball_tray_memory = self.rescue.exit()
 
-        self.logger.info("Rescue stopped")
+            self.logger.info("Rescue stopped")
+        except Exception:
+            self.logger.exception("Exception in rescue")
+            self.robot.stop_moving()
 
     def follow_loop(self):
+        try:
+            while not self.stop_event.is_set():
+                self.target_line_follow_loop_time = time.monotonic() + (
+                    1 / self.FOLLOW_LOOPS_PER_SECOND
+                )
 
-        while not self.stop_event.is_set():
-            self.target_line_follow_loop_time = time.monotonic() + (
-                1 / self.FOLLOW_LOOPS_PER_SECOND
-            )
+                self.follow.main()
 
-            self.follow.main()
+                if self.follow.is_finished():
+                    break
 
-            if self.follow.is_finished():
-                break
+                now = time.monotonic()
 
-            now = time.monotonic()
+                if now < self.target_line_follow_loop_time:
+                    time.sleep(self.target_line_follow_loop_time - now)
 
-            if now < self.target_line_follow_loop_time:
-                time.sleep(self.target_line_follow_loop_time - now)
+            self.robot.stop_moving()
 
-        self.robot.stop_moving()
-
-        self.logger.info("Line follow stopped")
+            self.logger.info("Line follow stopped")
+        except Exception:
+            self.logger.exception("Exception in line follow")
+            self.robot.stop_moving()
 
     def cleanup(self):
         self.robot.stop_moving()

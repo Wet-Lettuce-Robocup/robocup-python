@@ -1,5 +1,6 @@
 import logging
 import math
+import time
 
 import cv2
 from ultralytics import YOLO
@@ -26,7 +27,7 @@ class Vision:
     ball_diameter = 0.05
     evac_height = 0.06
 
-    def __init__(self, debug=True):
+    def __init__(self, debug=False):
         self.logger = logging.getLogger("vision")
 
         self.camera = FrontCamera()
@@ -39,6 +40,10 @@ class Vision:
         self.start_x = int(self.dw * 0.05)
         self.start_y = int(self.dh / 3)
 
+        self.debug_frame = None
+
+        self.last_debug_frame = None
+
     def _crop_box_to_frame(self, x1, y1, x2, y2):
         return (
             int(x1 + self.start_x),
@@ -47,9 +52,18 @@ class Vision:
             int(y2 + self.start_y),
         )
 
-    def get_all_objects(self):
+    def get_camera_frame(self):
+        if self.last_debug_frame is None:
+            _, cropped_frame = self.camera.get_frame()
+            return cropped_frame
+        if time.monotonic() - self.last_debug_frame < 0.4:
+            return self.debug_frame
+        _, cropped_frame = self.camera.get_frame()
+        return cropped_frame
 
+    def get_all_objects(self):
         raw_frame, cropped_frame = self.camera.get_frame()
+
         if raw_frame is None:
             self.logger.info("No frame given received from front camera")
             return None
@@ -64,8 +78,8 @@ class Vision:
         for i in results:
             if self.debug:
                 annotated_frame = i.plot()
-                cv2.imshow("a", annotated_frame)
-                cv2.waitKey(1)
+                self.debug_frame = annotated_frame
+                self.last_debug_frame = time.monotonic()
                 # self.out.write(annotated_frame)
 
             for x1, y1, x2, y2, conf, cls in i.boxes.data.tolist():

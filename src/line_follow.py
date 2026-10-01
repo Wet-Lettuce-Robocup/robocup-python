@@ -213,9 +213,10 @@ class Follow:
 
     def reset(self):
         self.follow_status = Task.INIT
+        self.finished = False
 
     def _transition_to(self, task):
-        self.logger.info(f"Task: {self.follow_status.name} -> {task.name}")
+        self.logger.info(f"Line follow task: {self.follow_status.name} -> {task.name}")
 
         self.follow_status = task
         self.task_started = False

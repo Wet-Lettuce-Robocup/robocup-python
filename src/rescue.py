@@ -1,9 +1,9 @@
-from enum import Enum
 import logging
 import time
+from enum import Enum
 
-from components.vision import Vision
 from components.front_led_controller import LEDController
+from components.vision import Vision
 
 
 class Task(Enum):
@@ -21,12 +21,14 @@ class Task(Enum):
 
 
 class Rescue:
+    DEBUG = True
+
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.rescue")
 
         self.i2c_controller = i2c_controller
         self.robot = robot
-        self.vision = Vision()
+        self.vision = Vision(debug=self.DEBUG)
         self.led = LEDController()
 
         self.current_task = Task.ENTER
@@ -54,10 +56,11 @@ class Rescue:
 
     def reset(self):
         self.current_task = Task.ENTER
+        self.task_started = False
 
     def _transition_to(self, task):
         """Change to a new rescue task."""
-        self.logger.info(f"Task: {self.current_task.name} -> {task.name}")
+        self.logger.info(f"Rescue task: {self.current_task.name} -> {task.name}")
         self.current_task = task
         self.task_started = False
 
@@ -133,6 +136,10 @@ class Rescue:
         else:
             if time.monotonic() < self.scan_timeout:
                 self.logger.info("Scan timeout reached: no more balls have been detected.")
+                self.robot.drive_PID(300, 50)
+                time.sleep(3)
+                self.robot.stop_moving()
+
             self.logger.info(f"All balls rescued: Silver = {silver_found}, Black = {black_found}")
             self.is_targetting_balls = False
             return []
@@ -162,8 +169,8 @@ class Rescue:
 
         self.logger.info(f"Evac positions: {evac_positions}")
         # Separate green and red detections
-        green = [position for position in evac_positions if position["cls"] == "green"]
-        red = [position for position in evac_positions if position["cls"] == "red"]
+        green = [position for position in evac_positions.values() if position["cls"] == "green"]
+        red = [position for position in evac_positions.values() if position["cls"] == "red"]
 
         if not self.green_found and green:
             return green
@@ -179,7 +186,8 @@ class Rescue:
 
         self.logger.info(f"Rotating {angle:.1f}° towards target")
 
-        self.robot.spin(angle)
+        self.robot.spin_enc(angle)
+        time.sleep(5)
 
     def move_to_target(self, distance):
         if distance <= 0:
@@ -187,7 +195,8 @@ class Rescue:
             return
 
         self.logger.info(f"Driving {distance:.2f}m towards target")
-        self.robot.drive_dist(distance)
+        self.robot.drive_dist_enc(distance * 1000, 500)
+        time.sleep(5)
 
     def enter_rescue(self):
         self.logger.info("Entering rescue zone")
@@ -205,15 +214,16 @@ class Rescue:
         if 200 < dist < 1000:
             self.robot.drive_dist_enc(dist / 2)
         else:
-            self.logger.warning("Front dist not valid, driving 40cm anyway")
+            self.logger.warning("Front dist not valid, driving 400mm anyway")
             self.robot.drive_dist_enc(400)
-        time.sleep(3)
+        time.sleep(4)
 
         left_dist = self.robot.get_side_distance()
         if 0 < left_dist < 300:
             self.robot.spin_enc(45, 500)
             time.sleep(2)
             self.robot.drive_dist_enc(300)
+            time.sleep(3)
 
     def grab_ball(self):
         if self.target_ball is None:
@@ -226,7 +236,8 @@ class Rescue:
         colour = self.target_ball["cls"]
         self.logger.info(f"Grabbing {colour} ball")
 
-        self.robot.drive_dist(0.15, velocity=50)
+        self.robot.drive_dist_enc(150, velocity=300)
+        time.sleep(4)
 
         self.robot.claw("grab")
 
@@ -240,7 +251,8 @@ class Rescue:
         self.logger.info(f"Ball storage: {self.ball_storage}")
 
         # Reverse away from the ball.
-        self.robot.drive_dist(-0.15)
+        self.robot.drive_dist_enc(-150, 400)
+        time.sleep(3)
 
         # Lift the ball.
         self.robot.lift("up")
@@ -255,13 +267,16 @@ class Rescue:
         self.logger.info(f"Dumping balls at {colour} evacuation point")
 
         # Back away from the evacuation point.
-        self.robot.drive_dist(-0.1)
+        self.robot.drive_dist_enc(-100, 500)
+        time.sleep(4)
 
         # Turn around.
-        self.robot.spin(180)
+        self.robot.spin_enc(180)
+        time.sleep(10)
 
         # Move backwards/towards the drop area.
-        self.robot.drive_dist(-0.15)
+        self.robot.drive_dist_enc(-150, 400)
+        time.sleep(4)
 
         # Red evacuation point requires opening the claw before releasing the tray.
         if colour == "red":
@@ -292,11 +307,15 @@ class Rescue:
         left_dist = self.robot.get_side_distance()
         front_dist = self.robot.get_front_distance()
 
+        if left_dist is None:
+            self.logger.error("Left tof not working")
+            return "error", 0
+        if front_dist is None:
+            self.logger.error("Front tof not working")
+            return "error", 0
+
         if front_dist < 0 or left_dist < 0:
-            return (
-                "error",
-                0,
-            )
+            return ("error", 0)
 
         # Wall directly ahead.
         if front_dist < 200:
@@ -336,16 +355,20 @@ class Rescue:
             if status == "right":
                 self.logger.info("Wall ahead, turning right")
                 self.robot.stop_moving()
-                self.robot.spin(90)
+                self.robot.spin_enc(90)
+                time.sleep(5)
                 continue
 
             if status == "wall":
                 # Small movement while correcting against wall.
-                self.robot.drive(
-                    vel=30,
-                    angular_vel=int(angle * 30),
-                )
+                self.robot.drive_PID(vel=320, angular_vel=int(angle * 60))
                 time.sleep(0.1)
+
+    def get_debug_frame(self):
+        frame = self.vision.get_camera_frame()
+        if frame is not None:
+            return frame
+        return None
 
     def tick_rescue(self):
         if self.current_task == Task.ENTER:
@@ -382,10 +405,10 @@ class Rescue:
             first_run = False
             if not self.task_started:
                 first_run = True
-                # Timeout of 10 seconds if no silver
-                self.silver_timeout = time.monotonic() + 10
-                # Timeout of 20 seconds if no black or silver
-                self.scan_timeout = time.monotonic() + 20
+                # Timeout of 50 seconds if no silver
+                self.silver_timeout = time.monotonic() + 50
+                # Timeout of 70 seconds if no black or silver
+                self.scan_timeout = time.monotonic() + 70
 
             self.task_started = True
 
@@ -393,7 +416,7 @@ class Rescue:
                 positions = self.scan_for_balls()
                 if not positions:
                     if first_run:
-                        self.robot.drive(0, 20)
+                        self.robot.drive_PID(0, 250)
                     return
 
                 self.robot.stop_moving()
@@ -415,7 +438,7 @@ class Rescue:
                     self.logger.info("No evacuation point found")
 
                     if first_run:
-                        self.robot.drive(0, 20)
+                        self.robot.drive_PID(0, 250)
                     return
 
                 self.robot.stop_moving()
@@ -441,6 +464,7 @@ class Rescue:
             self.tray_handler("release")
 
             self.rotate_to_target(self.target_ball["angle"])
+
             self._transition_to(Task.APPROACH_BALL)
 
         elif self.current_task == Task.APPROACH_BALL:
@@ -458,7 +482,8 @@ class Rescue:
             approach_distance = max(0.0, distance - 0.15)
             self.logger.info(f"Approaching ball: {approach_distance:.2f}m")
             if approach_distance > 0:
-                self.robot.drive_dist(approach_distance)
+                self.robot.drive_dist_enc(approach_distance * 1000, 350)
+                time.sleep(4)
             self._transition_to(Task.LIFT_BALL)
 
         elif self.current_task == Task.LIFT_BALL:
@@ -484,9 +509,11 @@ class Rescue:
 
             # Move close enough for the claw.
             distance = self.target_ball["dist"]
+            drive_dist = max(0, distance - 0.08)
 
             if distance > 0.10:
-                self.robot.drive_dist(max(0, distance - 0.08))
+                self.robot.drive_dist_enc(drive_dist * 1000, 300)
+                time.sleep(3)
 
             self.grab_ball()
 
@@ -525,7 +552,8 @@ class Rescue:
             self.logger.info(f"Approaching evacuation point: {approach_distance:.2f}m")
 
             if approach_distance > 0:
-                self.robot.drive_dist(approach_distance)
+                self.robot.drive_dist_enc(approach_distance * 1000)
+                time.sleep(5)
 
             self._transition_to(Task.DUMP_EVAC_POINT)
 
@@ -551,7 +579,8 @@ class Rescue:
 
                 self.led.set_brightness(0)
 
-                self.robot.drive_dist(0.2)
+                self.robot.drive_dist_enc(200)
+                time.sleep(3)
 
             self.locate_exit()
 
