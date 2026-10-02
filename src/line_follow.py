@@ -73,7 +73,7 @@ class Follow:
     # Black line det
     BLUR_SIZE = 9
 
-    MORPH_CLOSE_SIZE = 9
+    MORPH_CLOSE_SIZE = 7
     MORPH_OPEN_SIZE = 3
 
     BLACK_THRESH = 60
@@ -94,11 +94,11 @@ class Follow:
 
     MIN_LINE_ROWS = 8
 
-    MAX_CENTRE_SHIFT_PER_ROW = 6.0
+    MAX_CENTRE_SHIFT_PER_ROW = 9.0
 
-    INITIAL_CENTRE_SEARCH = 70.0
+    INITIAL_CENTRE_SEARCH = 100.0
 
-    WIDE_LINE_WIDTH = 80
+    WIDE_LINE_WIDTH = 160
 
     MAX_FIT_RESIDUAL = 7.0
 
@@ -114,7 +114,7 @@ class Follow:
     GREEN_S_LOW = 70
     GREEN_V_LOW = 40
 
-    GREEN_MIN_AREA = 2000
+    GREEN_MIN_AREA = 3000
     GREEN_MAX_AREA = 15000
 
     GREEN_PIXEL_THRESHOLD = 400
@@ -134,13 +134,13 @@ class Follow:
     SAME_FRAME_THRESHOLD = 0.8
 
     LOWER_LINE_LIMIT = 0.75
-    LOWER_LINE_REVERSE_THRESH = 0.85
+    LOWER_LINE_REVERSE_THRESH = 0.80
 
     MIN_BOTTOM_LINE_POINTS = 8
     BOTTOM_LINE_MIN_HEIGHT = 4
 
-    BOTTOM_SHARP_ANGLE = 22.0
-    BOTTOM_SHARP_HISTORY_ANGLE = 18.0
+    BOTTOM_SHARP_ANGLE = 20.0
+    BOTTOM_SHARP_HISTORY_ANGLE = 15.0
     BOTTOM_REVERSE_FRAMES = 12
 
     # Rescue detection
@@ -150,7 +150,7 @@ class Follow:
     RED_V_MIN = 70
 
     # PID
-    MAX_TURN = 500
+    MAX_TURN = 600
 
     KP = 15.0
     KI = 0.0
@@ -194,6 +194,7 @@ class Follow:
 
         # Green
         self.last_green_centres = []
+        self.last_green_time = 0
 
         # Counters
         self.no_line_frames = 0
@@ -1759,8 +1760,22 @@ class Follow:
 
         return cv2.countNonZero(line) > 5000
 
-    # Main loop
+    def _reset_line_tracking(self):
+        self.pid.reset()
+        self.last_time = None
+        self.last_error = 0
+        self.recovering = False
+        self.bottom_recovering = False
+        self.bottom_only_frames = 0
+        self.in_gap = False
+        self.no_line_frames = 0
+        self.last_line_frame = None
+        self.gap_frames = 0
 
+        self.line_angle_history.clear()
+        self.line_target_history.clear()
+
+    # Main loop
     def main(self):
         now = time.monotonic()
         if self.last_time is None:
@@ -1798,20 +1813,8 @@ class Follow:
 
         elif self.follow_status == Task.FOLLOW:
             if not self.task_started:
-                self.pid.reset()
-                self.last_time = None
-                self.last_error = 0
-                self.recovering = False
-                self.bottom_recovering = False
-                self.bottom_only_frames = 0
-                self.in_gap = False
-                self.no_line_frames = 0
-                self.last_line_frame = None
-                self.gap_frames = 0
                 self.same_frame_frames = 0
-
-                self.line_angle_history.clear()
-                self.line_target_history.clear()
+                self._reset_line_tracking()
 
                 self.task_started = True
 
@@ -1859,26 +1862,40 @@ class Follow:
                 self.robot.drive_PID(int(self.VELOCITY * 0.5), 0)
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
+                if (
+                    time.monotonic() < self.last_green_time + 3
+                    and time.monotonic() > self.last_green_time
+                ):
+                    self.logger.info("Green turn detected within 3s of last green turn")
+                    self.robot.drive_PID(200)
+                    time.sleep(0.1)
+                    return
                 self.logger.info(f"Green turn detected {result.action}")
 
-                self.robot.drive_dist_enc(60, 600)
-                time.sleep(0.8)
-                self.robot.drive_PID(100, result.target_angle * 3)
-                time.sleep(2)
-                self.robot.drive_dist_enc(20, 400)
+                self.robot.drive_PID(80, result.target_angle * 3)
+                time.sleep(2.2)
+                self.robot.stop_moving()
+                time.sleep(0.2)
 
-                self.pid.reset()
-                self.last_time = None
+                self._reset_line_tracking()
+                self.last_green_time = time.monotonic()
 
             elif result.action == "U_TURN":
+                if (
+                    time.monotonic() < self.last_green_time + 3
+                    and time.monotonic() > self.last_green_time
+                ):
+                    self.logger.info("Green turn detected within 3s of last green turn")
+                    self.robot.drive_PID(200)
+                    time.sleep(0.1)
+                    return
                 self.logger.info("U-turn detected")
 
                 self.robot.spin_enc(result.target_angle)
                 time.sleep(5)
                 # self.robot.drive_dist_enc(50)
-
-                self.pid.reset()
-                self.last_time = None
+                self._reset_line_tracking()
+                self.last_green_time = time.monotonic()
 
             elif result.action == "REVERSE":
                 self.logger.info("Reversing")
@@ -1908,6 +1925,7 @@ class Follow:
                 self.previous_frame = None
 
                 self.last_green_centres = []
+                self.last_green_time = 0
 
                 self.no_line_frames = 0
                 self.gap_frames = 0
