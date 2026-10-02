@@ -98,7 +98,7 @@ class Follow:
 
     INITIAL_CENTRE_SEARCH = 70.0
 
-    WIDE_LINE_WIDTH = 45
+    WIDE_LINE_WIDTH = 80
 
     MAX_FIT_RESIDUAL = 7.0
 
@@ -121,8 +121,8 @@ class Follow:
     GREEN_HSV_DOWNSAMPLE = 2
 
     # Driving
-    VELOCITY = 280
-    OFFSET_GAIN = 15.0
+    VELOCITY = 350
+    OFFSET_GAIN = 20.0
     MAX_TARGET_ANGLE = 90.0
 
     # Gap and recovery
@@ -152,9 +152,9 @@ class Follow:
     # PID
     MAX_TURN = 500
 
-    KP = 5.5
+    KP = 15.0
     KI = 0.0
-    KD = 0.2
+    KD = 0.5
 
     def __init__(self, i2c_controller, robot):
         self.logger = logging.getLogger("robot.line_follow")
@@ -236,6 +236,7 @@ class Follow:
     def reset(self):
         self.follow_status = Task.INIT
         self.finished = False
+        self.task_started = False
 
     def _transition_to(self, task):
         self.logger.info(f"Line follow task: {self.follow_status.name} -> {task.name}")
@@ -1837,21 +1838,21 @@ class Follow:
                 turn_strength = abs(turn_error) / self.MAX_TURN
 
                 # Makes robot slow on large error values
-                turn_factor = 1.6  # Larger value = slows down more at larger angles
+                turn_factor = 2  # Larger value = slows down more at larger angles
                 speed_scale = 1.0 / (1.0 + turn_factor * turn_strength**2)
                 velocity = self.VELOCITY * speed_scale
 
+                if self.DEBUG:
+                    self.logger.info(
+                        f"PID Error: {turn_error}, Scaled Velocity: {velocity} due to speed scaling {speed_scale}"
+                    )
                 # At very large steering errors, turn on the spot
-                if turn_strength > 0.9:
+                if turn_strength > 0.7:
                     velocity = 0
 
                 self.robot.drive_PID(int(velocity), int(turn_error))
 
                 self.last_error = turn_error
-                # if self.DEBUG:
-                #     self.logger.info(
-                #         f"PID Error: {turn_error}, Target Angle: {result.target_angle}, Line Angle: {result.line_angle}, Line Offset: {result.line_offset}"
-                #     )
 
             elif result.action == "FORWARD":
                 self.logger.info("Moving forward")
@@ -1862,7 +1863,7 @@ class Follow:
 
                 self.robot.drive_dist_enc(60, 600)
                 time.sleep(0.8)
-                self.robot.drive_PID(400, result.target_angle * 3)
+                self.robot.drive_PID(100, result.target_angle * 3)
                 time.sleep(2)
                 self.robot.drive_dist_enc(20, 400)
 
