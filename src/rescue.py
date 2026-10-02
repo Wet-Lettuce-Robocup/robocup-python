@@ -265,6 +265,9 @@ class Rescue:
         colour = self.target_ball["cls"]
         self.logger.info(f"Grabbing {colour} ball")
 
+        claw_distance = self.robot.get_claw_distance()
+        self.logger.info(f"Claw distance before grab: {claw_distance}mm")
+
         self.robot.drive_dist_enc(50, velocity=250)
         time.sleep(4)
 

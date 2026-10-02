@@ -1,5 +1,6 @@
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -84,8 +85,26 @@ class Follow:
     CROSSING_IGNORE_BAND = 8
     CROSSING_TOP_X_TOLERANCE = 45
 
-    # Green turn det
+    LINE_ROI_START = 0.15
 
+    SCAN_ROW_STEP = 2
+
+    MIN_LINE_WIDTH = 3
+    MAX_LINE_WIDTH = 45
+
+    MIN_LINE_ROWS = 8
+
+    MAX_CENTRE_SHIFT_PER_ROW = 6.0
+
+    INITIAL_CENTRE_SEARCH = 70.0
+
+    WIDE_LINE_WIDTH = 45
+
+    MAX_FIT_RESIDUAL = 7.0
+
+    LINE_HISTORY_LENGTH = 8
+
+    # Green turn det
     HOUGH_THRESHOLD = 15
     HOUGH_MIN_LINE_LENGTH = 18
     HOUGH_MAX_LINE_GAP = 8
@@ -158,6 +177,9 @@ class Follow:
         self.last_line_angle = 0.0
         self.last_line_offset = 0.0
         self.last_line_frame = None
+
+        self.line_angle_history = deque(maxlen=self.LINE_HISTORY_LENGTH)
+        self.line_target_history = deque(maxlen=self.LINE_HISTORY_LENGTH)
 
         # State
         self.in_gap = False
@@ -365,8 +387,7 @@ class Follow:
             # There are two cases:
             #   1. Straight line / genuine gap: -> keep driving straight
             #   2. Sharp bend: -> command a hard turn
-            # If the hard-turn state persists, assume the robot has
-            # overshot and reverse.
+            # If the hard-turn state persists, assume the robot has overshot and reverse.
 
             if line_info["bottom_only"]:
                 self.bottom_only_frames += 1
@@ -376,9 +397,24 @@ class Follow:
 
                 previous_angle = abs(self.last_target_angle)
 
+                # Look at the recent reliable line history
+                if self.line_angle_history:
+                    recent_angles = np.asarray(
+                        list(self.line_angle_history)[-4:],
+                        dtype=np.float32,
+                    )
+
+                    recent_median_angle = float(np.median(np.abs(recent_angles)))
+
+                    recent_mean_angle = float(np.mean(recent_angles))
+                else:
+                    recent_median_angle = 0.0
+                    recent_mean_angle = 0.0
+
                 sharp_bend = (
                     current_angle >= self.BOTTOM_SHARP_ANGLE
                     or previous_angle >= self.BOTTOM_SHARP_HISTORY_ANGLE
+                    or recent_median_angle >= self.BOTTOM_SHARP_HISTORY_ANGLE
                 )
 
                 # Straight bottom-only line
@@ -420,8 +456,13 @@ class Follow:
                 # Sharp bend
                 if abs(line_info["angle"]) >= self.BOTTOM_SHARP_ANGLE:
                     turn_direction = np.sign(line_info["angle"])
+
+                elif abs(recent_mean_angle) >= self.BOTTOM_SHARP_HISTORY_ANGLE:
+                    turn_direction = np.sign(recent_mean_angle)
+
                 elif abs(self.last_target_angle) > 0:
                     turn_direction = np.sign(self.last_target_angle)
+
                 else:
                     turn_direction = 1.0
 
@@ -905,22 +946,16 @@ class Follow:
         return result
 
     # Line detection
-
-    def _detect_line(
-        self,
-        black_mask,
-        crossing=None,
-    ):
+    def _detect_line(self, black_mask, crossing=None):
         """
-        Detect the main line to follow.
+        Detect the main line.
 
-        Normal case:
-            PCA over the main contour.
+        The camera image is sampled from the bottom upwards. On each
+        row, find compact black runs and track the run whose centre
+        is closest to the previously detected line centre.
 
-        Horizontal-crossing case:
-            Ignore a band around the detected horizontal line before
-            calculating PCA. This prevents the horizontal component
-            from dominating the direction calculation.
+        This prevents a horizontal crossing from becoming the main
+        line direction, because very wide black runs are ignored.
         """
 
         h, w = black_mask.shape
@@ -932,80 +967,166 @@ class Follow:
                 "top_x": None,
             }
 
-        # Ignore the top ~20% when choosing the line contour.
-        roi_start = int(h * 0.2)
-
-        roi = black_mask[roi_start:h, :]
-
-        contours, _ = cv2.findContours(
-            roi,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE,
-        )
-
-        if not contours:
-            return self._empty_line_info(crossing)
+        roi_start = int(h * self.LINE_ROI_START)
 
         centre_x = w / 2.0
-        bottom_y = roi.shape[0] - 1
 
-        best_contour = None
-        best_score = float("inf")
+        # Predict where the bottom of the line should be based on the previous reliable offset
+        if self.last_line_frame is not None:
+            predicted_x = centre_x + self.last_line_offset * (w / 2.0)
 
-        for contour in contours:
-            area = cv2.contourArea(contour)
+            predicted_x = float(np.clip(predicted_x, 0, w - 1))
+        else:
+            predicted_x = centre_x
 
-            if area < 10:
+        scan_points = []
+        wide_rows = []
+
+        expected_x = predicted_x
+        tracking = False
+
+        max_shift = self.MAX_CENTRE_SHIFT_PER_ROW * self.SCAN_ROW_STEP
+
+        # Scan from bottom towards the top
+        for y in range(
+            h - 1,
+            roi_start - 1,
+            -self.SCAN_ROW_STEP,
+        ):
+            row = black_mask[y] > 0
+
+            # Find contiguous black runs
+            padded = np.pad(
+                row.astype(np.uint8),
+                (1, 1),
+                mode="constant",
+            )
+
+            starts = np.where((padded[1:-1] == 1) & (padded[:-2] == 0))[0]
+
+            ends = np.where((padded[1:-1] == 1) & (padded[2:] == 0))[0]
+
+            candidates = []
+
+            for start, end in zip(starts, ends):
+                width = int(end - start)
+
+                if width < self.MIN_LINE_WIDTH:
+                    continue
+
+                # Detect horizontal lines (avoid them for line following)
+                if width > self.WIDE_LINE_WIDTH:
+                    wide_rows.append(y)
+                    continue
+
+                run_centre = (float(start) + float(end - 1)) / 2.0
+
+                candidates.append((
+                    abs(run_centre - expected_x),
+                    run_centre,
+                    width,
+                ))
+
+            if not candidates:
                 continue
 
-            x, y, cw, ch = cv2.boundingRect(contour)
+            # Closest candidate to the previously tracked line
+            candidates.sort(key=lambda item: item[0])
 
-            # Ignore very small regions
-            if cw < 3 or ch < 3:
-                continue
+            distance, run_centre, run_width = candidates[0]
 
-            # Check if contour is close to bottom centre of frame
-            contour_bottom = y + ch
-            contour_centre_x = x + cw / 2.0
+            if not tracking:
+                if distance > self.INITIAL_CENTRE_SEARCH:
+                    continue
 
-            centre_distance = abs(contour_centre_x - centre_x)
-            bottom_distance = abs(bottom_y - contour_bottom)
+                tracking = True
 
-            # Normal contour scoring
-            score = centre_distance * 3.0 + bottom_distance * 1.0 - area * 0.01
+            else:
+                if distance > max_shift:
+                    continue
 
-            # Prefer vertical lines
-            if crossing["detected"]:
-                top_x = crossing["top_x"]
+            scan_points.append((
+                run_centre,
+                float(y),
+                float(run_width),
+            ))
 
-                if top_x is not None and x <= top_x <= x + cw:
-                    score -= 250.0
+            expected_x = expected_x * 0.65 + run_centre * 0.35
 
-                score -= ch * 1.5
-
-            if score < best_score:
-                best_score = score
-                best_contour = contour
-
-        if best_contour is None:
+        if len(scan_points) < self.MIN_LINE_ROWS:
             return self._empty_line_info(crossing)
 
-        points = best_contour.reshape(-1, 2).astype(np.float32)
+        points = np.asarray(
+            [[x, y] for x, y, width in scan_points],
+            dtype=np.float32,
+        )
 
-        if len(points) < 12:
+        xs = points[:, 0]
+        ys = points[:, 1]
+
+        try:
+            slope, intercept = np.polyfit(ys, xs, 1)
+
+        except (np.linalg.LinAlgError, ValueError):
             return self._empty_line_info(crossing)
 
-        # Convert back to full-frame coordinates
-        points[:, 1] += roi_start
+        fitted_xs = slope * ys + intercept
 
-        # Check if line is fully within lower part of frame
+        residuals = np.abs(xs - fitted_xs)
 
-        bottom_threshold = h * self.LOWER_LINE_REVERSE_THRESH
+        # Remove obvious outliers
+        median_residual = float(np.median(residuals))
+
+        residual_limit = max(
+            self.MAX_FIT_RESIDUAL,
+            median_residual * 2.5 + 2.0,
+        )
+
+        good = residuals <= residual_limit
+
+        if np.count_nonzero(good) >= self.MIN_LINE_ROWS:
+            fit_points = points[good]
+
+            xs = fit_points[:, 0]
+            ys = fit_points[:, 1]
+
+            try:
+                slope, intercept = np.polyfit(ys, xs, 1)
+
+            except (np.linalg.LinAlgError, ValueError):
+                return self._empty_line_info(crossing)
+
+            points = fit_points
+
+        # Calculate line angle
+
+        # x = slope*y + intercept
+        # Positive slope means the line moves right as it approaches
+        # the bottom of the image
+        angle = -np.degrees(np.arctan(slope))
+
+        angle = float(np.clip(angle, -90.0, 90.0))
+
+        # Calculate bottom offset
+        bottom_region_start = h * 0.75
+
+        bottom_points = points[points[:, 1] >= bottom_region_start]
+
+        if len(bottom_points) >= 3:
+            bottom_center = float(np.median(bottom_points[:, 0]))
+        else:
+            bottom_center = slope * (h - 1) + intercept
+
+        offset = (bottom_center - centre_x) / (w / 2.0)
+
+        offset = float(np.clip(offset, -1.0, 1.0))
 
         min_y = float(np.min(points[:, 1]))
         max_y = float(np.max(points[:, 1]))
 
         line_height = max_y - min_y
+
+        bottom_threshold = h * self.LOWER_LINE_REVERSE_THRESH
 
         bottom_only = (
             len(points) >= self.MIN_BOTTOM_LINE_POINTS
@@ -1013,73 +1134,29 @@ class Follow:
             and line_height >= self.BOTTOM_LINE_MIN_HEIGHT
         )
 
-        # Calculate PCA points
+        horizontal_crossing = len(wide_rows) > 0
 
-        direction_points = points
-
-        if crossing["detected"]:
-            crossing_y = crossing["crossing_y"]
-
-            if crossing_y is not None:
-                keep = np.abs(points[:, 1] - crossing_y) > self.CROSSING_IGNORE_BAND
-
-                filtered = points[keep]
-
-                if len(filtered) >= 12:
-                    direction_points = filtered
-
-        mean, eigenvectors = cv2.PCACompute(
-            direction_points,
-            mean=None,
+        # Create points representing the fitted line for debugging
+        fit_y = np.linspace(
+            max(roi_start, int(min_y)),
+            min(h - 1, int(max_y)),
+            20,
         )
 
-        direction = eigenvectors[0]
+        fit_x = slope * fit_y + intercept
 
-        dx = float(direction[0])
-        dy = float(direction[1])
-
-        # Make direction point towards the bottom of the image
-        if dy < 0:
-            dx *= -1
-            dy *= -1
-
-        angle = -np.degrees(np.arctan2(dx, dy))
-        if angle > 90:
-            angle -= 180
-        elif angle < -90:
-            angle += 180
-
-        bottom_start = int(h * self.LOWER_LINE_LIMIT)
-
-        bottom_points = points[points[:, 1] >= bottom_start]
-
-        if crossing["detected"]:
-            crossing_y = crossing["crossing_y"]
-
-            if crossing_y is not None:
-                bottom_points = bottom_points[
-                    np.abs(bottom_points[:, 1] - crossing_y) > self.CROSSING_IGNORE_BAND
-                ]
-
-        if len(bottom_points) >= 4:
-            bottom_center = float(np.mean(bottom_points[:, 0]))
-
-            offset = (bottom_center - (w / 2.0)) / (w / 2.0)
-
-            offset = float(np.clip(offset, -1.0, 1.0))
-
-        else:
-            offset = 0.0
+        direction_points = np.column_stack((fit_x, fit_y)).astype(np.float32)
 
         return {
             "detected": True,
-            "angle": float(angle),
+            "angle": angle,
             "offset": offset,
             "points": points,
             "direction_points": direction_points,
             "bottom_only": bottom_only,
-            "crossing": crossing["detected"],
+            "crossing": (crossing["detected"] or horizontal_crossing),
             "crossing_y": crossing["crossing_y"],
+            "wide_rows": wide_rows,
         }
 
     def _empty_line_info(self, crossing=None):
@@ -1099,6 +1176,7 @@ class Follow:
             "bottom_only": False,
             "crossing": crossing["detected"],
             "crossing_y": crossing["crossing_y"],
+            "wide_rows": [],
         }
 
     # Target angle calculation
@@ -1130,7 +1208,14 @@ class Follow:
 
         self.last_line_angle = line_info["angle"]
         self.last_line_offset = line_info["offset"]
-        self.last_target_angle = self._calculate_target_angle(line_info)
+
+        target_angle = self._calculate_target_angle(line_info)
+
+        self.last_target_angle = target_angle
+
+        self.line_angle_history.append(float(line_info["angle"]))
+
+        self.line_target_history.append(float(target_angle))
 
         self.last_line_frame = True
 
@@ -1550,6 +1635,15 @@ class Follow:
                     -1,
                 )
 
+        for y in line_info.get("wide_rows", []):
+            cv2.line(
+                debug,
+                (0, int(y)),
+                (self.WIDTH - 1, int(y)),
+                (0, 255, 255),
+                1,
+            )
+
         cv2.line(
             debug,
             (self.WIDTH // 2, 0),
@@ -1715,6 +1809,9 @@ class Follow:
                 self.gap_frames = 0
                 self.same_frame_frames = 0
 
+                self.line_angle_history.clear()
+                self.line_target_history.clear()
+
                 self.task_started = True
 
             # Rescue detection before line processing
@@ -1765,8 +1862,8 @@ class Follow:
 
                 self.robot.drive_dist_enc(60, 600)
                 time.sleep(0.8)
-                self.robot.spin_enc(result.target_angle - 20, 500)
-                time.sleep(2.5)
+                self.robot.drive_PID(400, result.target_angle * 3)
+                time.sleep(2)
                 self.robot.drive_dist_enc(20, 400)
 
                 self.pid.reset()
@@ -1814,6 +1911,9 @@ class Follow:
                 self.no_line_frames = 0
                 self.gap_frames = 0
                 self.same_frame_frames = 0
+
+                self.line_angle_history.clear()
+                self.line_target_history.clear()
 
                 self.last_time = None
                 self.last_error = 0
