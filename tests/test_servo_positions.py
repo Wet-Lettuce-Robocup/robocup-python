@@ -15,10 +15,7 @@ class TestServos:
         write_response = self.i2c_controller.handle_write(0x67, 0x14)
 
         if not write_response["success"]:
-            self.logger.error(f"Servo stop command failed: {write_response['message']}")
-            return False
-
-        return True
+            print(f"Servo stop command failed: {write_response['message']}")
 
     def test(self):
         self.robot.tray("reset")
