@@ -1,7 +1,9 @@
+```python
 import logging
 import threading
 import time
 from enum import Enum
+import os
 
 import cv2
 from gpiozero import Button
@@ -49,7 +51,11 @@ class Main:
         self.rescue = Rescue(self.i2c_controller, self.robot)
         self.follow = Follow(self.i2c_controller, self.robot)
 
-        self.button = Button(6, pull_up=True, bounce_time=self.BUTTON_DEBOUNCE_TIME)
+        self.button = Button(
+            6,
+            pull_up=True,
+            bounce_time=self.BUTTON_DEBOUNCE_TIME
+        )
 
         self.button.when_released = self._on_pressed
 
@@ -69,12 +75,26 @@ class Main:
         self.target_line_follow_loop_time = None
 
         if self.VIDEO and self.DEBUG:
+
+            print("Working directory:", os.getcwd())
+
             self.followFile = cv2.VideoWriter(
-                "followOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (200, 100)
+                "followOutput.avi",
+                cv2.VideoWriter_fourcc(*"MJPG"),
+                10,
+                (200, 100)
             )
+
             self.rescueFile = cv2.VideoWriter(
-                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (1536, 864)
+                "rescueOutput.avi",
+                cv2.VideoWriter_fourcc(*"MJPG"),
+                10,
+                (1536, 864)
             )
+
+            print("Follow writer opened:", self.followFile.isOpened())
+            print("Rescue writer opened:", self.rescueFile.isOpened())
+
         else:
             self.followFile = None
             self.rescueFile = None
@@ -83,7 +103,9 @@ class Main:
         if self.current_task == task:
             return
 
-        self.logger.info(f"Main task: {self.current_task.name} -> {task.name}")
+        self.logger.info(
+            f"Main task: {self.current_task.name} -> {task.name}"
+        )
 
         self.current_task = task
         self.task_started = False
@@ -149,6 +171,7 @@ class Main:
                 self._handle_button()
 
                 if self.current_task == Task.INIT:
+
                     if self.task_started:
                         pass
 
@@ -164,6 +187,7 @@ class Main:
                     pass
 
                 elif self.current_task == Task.RESCUE:
+
                     if not self.task_started:
                         self.task_started = True
                         self.reset_stop()
@@ -183,25 +207,36 @@ class Main:
                         debug_frame = self.rescue.get_debug_frame()
 
                         if debug_frame is not None:
+
                             if self.VNC:
                                 cv2.imshow("Debug", debug_frame)
                                 cv2.waitKey(1)
+
                             elif self.VIDEO:
+                                debug_frame = cv2.resize(
+                                    debug_frame,
+                                    (1536, 864)
+                                )
+
                                 self.rescueFile.write(debug_frame)
 
                     # Wait until the worker has stopped
                     if not self.rescue_thread.is_alive():
+
                         cv2.destroyAllWindows()
+
                         if self.rescue.is_finished():
                             self.logger.info("Rescue finished")
                             self._transition_to(Task.FOLLOW)
                         else:
                             self._transition_to(Task.IDLE)
+
                         self.rescue.reset()
 
                     time.sleep(0.05)
 
                 elif self.current_task == Task.FOLLOW:
+
                     if not self.task_started:
                         self.task_started = True
                         self.reset_stop()
@@ -221,31 +256,46 @@ class Main:
                         debug_frame = self.follow.get_debug_frame()
 
                         if debug_frame is not None:
+
                             if self.VNC:
                                 cv2.imshow("Debug", debug_frame)
                                 cv2.waitKey(1)
+
                             elif self.VIDEO:
+                                debug_frame = cv2.resize(
+                                    debug_frame,
+                                    (200, 100)
+                                )
+
                                 self.followFile.write(debug_frame)
 
                     if not self.follow_thread.is_alive():
+
                         cv2.destroyAllWindows()
+
                         if self.follow.is_finished():
                             self.logger.info("Line follow finished")
                             self._transition_to(Task.RESCUE)
                         else:
                             self._transition_to(Task.IDLE)
+
                         self.follow.reset()
 
                     time.sleep(0.05)
 
             except Exception as e:
-                self.logger.error(f"Caught an error in main loop! {e}")
+                self.logger.error(
+                    f"Caught an error in main loop! {e}"
+                )
 
     def rescue_loop(self):
+
         try:
             while not self.stop_event.is_set():
-                self.target_rescue_loop_time = time.monotonic() + (
-                    1 / self.RESCUE_LOOPS_PER_SECOND
+
+                self.target_rescue_loop_time = (
+                    time.monotonic()
+                    + (1 / self.RESCUE_LOOPS_PER_SECOND)
                 )
 
                 self.rescue.tick_rescue()
@@ -256,22 +306,28 @@ class Main:
                 now = time.monotonic()
 
                 if now < self.target_rescue_loop_time:
-                    time.sleep(self.target_rescue_loop_time - now)
+                    time.sleep(
+                        self.target_rescue_loop_time - now
+                    )
 
             self.robot.stop_moving()
 
             self.ball_tray_memory = self.rescue.exit()
 
             self.logger.info("Rescue stopped")
+
         except Exception:
             self.logger.exception("Exception in rescue")
             self.robot.stop_moving()
 
     def follow_loop(self):
+
         try:
             while not self.stop_event.is_set():
-                self.target_line_follow_loop_time = time.monotonic() + (
-                    1 / self.FOLLOW_LOOPS_PER_SECOND
+
+                self.target_line_follow_loop_time = (
+                    time.monotonic()
+                    + (1 / self.FOLLOW_LOOPS_PER_SECOND)
                 )
 
                 self.follow.main()
@@ -282,22 +338,36 @@ class Main:
                 now = time.monotonic()
 
                 if now < self.target_line_follow_loop_time:
-                    time.sleep(self.target_line_follow_loop_time - now)
+                    time.sleep(
+                        self.target_line_follow_loop_time - now
+                    )
 
             self.robot.stop_moving()
 
             self.logger.info("Line follow stopped")
+
         except Exception:
             self.logger.exception("Exception in line follow")
             self.robot.stop_moving()
 
     def cleanup(self):
+
         self.robot.stop_moving()
+
         self.button.close()
+
         self.fan.manual_fan_speed(0)
+
         self.i2c_controller.front_tof_en.close()
         self.i2c_controller.side_tof_en.close()
         self.i2c_controller.claw_tof_en.close()
+
+        # Release video writers so the AVI files are finalized correctly.
+        if self.followFile is not None:
+            self.followFile.release()
+
+        if self.rescueFile is not None:
+            self.rescueFile.release()
 
         cv2.destroyAllWindows()
 
@@ -308,8 +378,11 @@ if __name__ == "__main__":
     try:
         runtime = Main()
         runtime.main()
+
     except KeyboardInterrupt:
         pass
+
     finally:
         if runtime is not None:
             runtime.cleanup()
+```
