@@ -1863,21 +1863,17 @@ class Follow:
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 if (
-                    time.monotonic() < self.last_green_time + 1
+                    time.monotonic() < self.last_green_time + 3
                     and time.monotonic() > self.last_green_time
                 ):
-                    self.logger.info("Green turn detected within 1s of last green turn")
+                    self.logger.info("Green turn detected within 3s of last green turn")
                     self.robot.drive_PID(200)
-                    time.sleep(0.2)
+                    time.sleep(0.1)
                     return
                 self.logger.info(f"Green turn detected {result.action}")
 
-                self.robot.drive_PID(100)
-                time.sleep(0.6)
-                self.robot.spin_enc(result.target_angle - 20)
-                time.sleep(1.9)
-                self.robot.drive_PID(80)
-                time.sleep(0.6)
+                self.robot.drive_PID(80, result.target_angle * 3)
+                time.sleep(2.2)
                 self.robot.stop_moving()
                 time.sleep(0.2)
 
