@@ -21,14 +21,14 @@ class Task(Enum):
 
 
 class Rescue:
-    DEBUG = True
-
-    def __init__(self, i2c_controller, robot):
+    def __init__(self, i2c_controller, robot, debug=False):
         self.logger = logging.getLogger("robot.rescue")
+
+        self.debug = debug
 
         self.i2c_controller = i2c_controller
         self.robot = robot
-        self.vision = Vision(debug=self.DEBUG)
+        self.vision = Vision(debug=self.debug)
         self.led = LEDController()
 
         self.current_task = Task.ENTER
@@ -42,6 +42,8 @@ class Rescue:
         self.green_found = False
         self.red_found = False
         self.exit_found = False
+
+        self.angle_check_count = 0
 
         self.ball_storage = {
             "claw": None,
@@ -216,7 +218,7 @@ class Rescue:
         self.logger.info(f"Rotating {angle:.1f}° towards target")
 
         self.robot.spin_enc(angle, 200)
-        time.sleep(5)
+        time.sleep(angle * 0.06)  # also check pls
 
     def move_to_target(self, distance):
         if distance <= 0:
@@ -225,7 +227,7 @@ class Rescue:
 
         self.logger.info(f"Driving {distance:.2f}m towards target")
         self.robot.drive_dist_enc(distance * 1000, 300)
-        time.sleep(5)
+        time.sleep(distance * 35)  # pls check and confirm
 
     def enter_rescue(self):
         self.logger.info("Entering rescue zone")
@@ -424,6 +426,8 @@ class Rescue:
             self.red_found = False
             self.exit_found = False
 
+            self.angle_check_count = 0
+
             self.enter_rescue()
             self._transition_to(Task.START_SCAN)
 
@@ -484,22 +488,25 @@ class Rescue:
 
         elif self.current_task == Task.TARGET_BALL:
             # turn to face a ball
-            if self.target_ball is None:
-                self._transition_to(Task.SCAN)
-                return
-            if self.task_started:
-                return
+            if not self.task_started:
+                if self.target_ball is None:
+                    self._transition_to(Task.SCAN)
+                    return
 
-            self.task_started = True
+                self.task_started = True
 
-            self.logger.info(f"Rotating to {self.target_ball['cls']} ball")
+                self.logger.info(f"Rotating to {self.target_ball['cls']} ball")
 
-            self.robot.claw("release")
-            self.tray_handler("release")
+                self.robot.claw("release")
+                self.tray_handler("release")
 
-            self.rotate_to_target(self.target_ball["angle"])
+                self.rotate_to_target(self.target_ball["angle"] * 0.75)
 
-            self._transition_to(Task.APPROACH_BALL)
+                self.angle_check_count += 1
+
+                if self.angle_check_count >= 8:
+                    self.angle_check_count = 0
+                    self._transition_to(Task.APPROACH_BALL)
 
         elif self.current_task == Task.APPROACH_BALL:
             # move to approach a ball

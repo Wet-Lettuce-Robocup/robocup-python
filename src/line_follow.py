@@ -64,8 +64,6 @@ class LineFollowResult:
 
 
 class Follow:
-    DEBUG = True
-
     # Camera
     WIDTH = 200
     HEIGHT = 100
@@ -156,8 +154,10 @@ class Follow:
     KI = 0.0
     KD = 0.5
 
-    def __init__(self, i2c_controller, robot):
+    def __init__(self, i2c_controller, robot, debug=False):
         self.logger = logging.getLogger("robot.line_follow")
+
+        self.debug = debug
 
         self.i2c_controller = i2c_controller
         self.robot = robot
@@ -1824,9 +1824,9 @@ class Follow:
                 self._transition_to(Task.EXIT)
                 return
 
-            result = self.process_line(r_frame, c_frame, debug=self.DEBUG)
+            result = self.process_line(r_frame, c_frame, debug=self.debug)
 
-            if self.DEBUG and result.debug_frame is not None:
+            if self.debug and result.debug_frame is not None:
                 self.debug_frame = result.debug_frame
 
             if result.action == "FOLLOW":
@@ -1845,7 +1845,7 @@ class Follow:
                 speed_scale = 1.0 / (1.0 + turn_factor * turn_strength**2)
                 velocity = self.VELOCITY * speed_scale
 
-                if self.DEBUG:
+                if self.debug:
                     self.logger.info(
                         f"PID Error: {turn_error}, Scaled Velocity: {velocity} due to speed scaling {speed_scale}"
                     )

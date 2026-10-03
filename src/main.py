@@ -28,6 +28,9 @@ class Main:
 
     BUTTON_DEBOUNCE_TIME = 0.10
 
+    VNC = False
+    DEBUG = True
+
     def __init__(self):
 
         self.logger = setup_logging()
@@ -63,6 +66,17 @@ class Main:
 
         self.target_rescue_loop_time = None
         self.target_line_follow_loop_time = None
+
+        if self.VNC and self.DEBUG:
+            self.followFile = cv2.VideoWriter(
+                "followOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (200, 100)
+            )
+            self.rescueFile = cv2.VideoWriter(
+                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (2304, 1296)
+            )
+        else:
+            self.followFile = None
+            self.rescueFile = None
 
     def _transition_to(self, task):
         if self.current_task == task:
@@ -164,12 +178,15 @@ class Main:
                         self.rescue_thread.start()
 
                     # Debug display
-                    if self.rescue.DEBUG:
+                    if self.DEBUG:
                         debug_frame = self.rescue.get_debug_frame()
 
                         if debug_frame is not None:
-                            cv2.imshow("Debug", debug_frame)
-                            cv2.waitKey(1)
+                            if self.VNC:
+                                cv2.imshow("Debug", debug_frame)
+                                cv2.waitKey(1)
+                            else:
+                                self.rescueFile.write(debug_frame)
 
                     # Wait until the worker has stopped
                     if not self.rescue_thread.is_alive():
@@ -199,12 +216,15 @@ class Main:
                         self.follow_thread.start()
 
                     # Debug display
-                    if self.follow.DEBUG:
+                    if self.DEBUG:
                         debug_frame = self.follow.get_debug_frame()
 
                         if debug_frame is not None:
-                            cv2.imshow("Debug", debug_frame)
-                            cv2.waitKey(1)
+                            if self.DEBUG:
+                                cv2.imshow("Debug", debug_frame)
+                                cv2.waitKey(1)
+                            else:
+                                self.followFile.write(debug_frame)
 
                     if not self.follow_thread.is_alive():
                         cv2.destroyAllWindows()
