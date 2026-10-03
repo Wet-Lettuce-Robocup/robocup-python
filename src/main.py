@@ -30,7 +30,7 @@ class Main:
 
     VNC = False
     DEBUG = True
-    VIDEO = False
+    VIDEO = True
 
     def __init__(self):
 
