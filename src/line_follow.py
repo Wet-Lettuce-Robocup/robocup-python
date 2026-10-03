@@ -1845,7 +1845,7 @@ class Follow:
                 self.robot.spin_enc(80, 550)
                 time.sleep(3)
                 self.robot.drive_PID(600, -490)
-                time.sleep(3 / 6)
+                time.sleep(3.6)
                 self.robot.drive_PID(200)
 
             if self.lineInFrame():
