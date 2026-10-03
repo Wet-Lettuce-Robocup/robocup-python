@@ -545,9 +545,9 @@ class Rescue:
             distance = self.target_ball["dist"]
             approach_distance = max(0.0, distance - 0.20)
             self.logger.info(f"Approaching ball: {approach_distance:.2f}m")
-            if approach_distance > 0:
-                self.robot.drive_dist_enc(approach_distance * 1000, 350)
-                time.sleep(abs(approach_distance) * 25)
+            self.robot.drive_dist_enc(approach_distance * 1000, 350)
+            time.sleep(abs(approach_distance) * 25)
+
             self._transition_to(Task.LIFT_BALL)
 
         elif self.current_task == Task.LIFT_BALL:

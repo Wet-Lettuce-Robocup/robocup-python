@@ -98,8 +98,8 @@ Type=simple
 User=robot
 WorkingDirectory=/home/robot/robocup_python/src
 
-ExecStartPre=/usr/bin/pinctrl 16 op dh
-ExecStartPre=/usr/bin/pinctrl 17 op dh
+ExecStartPre=+/usr/bin/pinctrl 16 op dh
+ExecStartPre=+/usr/bin/pinctrl 17 op dh
 ExecStart=/home/robot/robocup_python/.venv/bin/python /home/robot/robocup_python/main.py
 
 Restart=on-failure
