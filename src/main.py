@@ -30,6 +30,7 @@ class Main:
 
     VNC = False
     DEBUG = True
+    VIDEO = False
 
     def __init__(self):
 
@@ -67,12 +68,12 @@ class Main:
         self.target_rescue_loop_time = None
         self.target_line_follow_loop_time = None
 
-        if self.VNC and self.DEBUG:
+        if self.VIDEO and self.DEBUG:
             self.followFile = cv2.VideoWriter(
                 "followOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (200, 100)
             )
             self.rescueFile = cv2.VideoWriter(
-                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (2304, 1296)
+                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (1536, 864)
             )
         else:
             self.followFile = None
@@ -185,7 +186,7 @@ class Main:
                             if self.VNC:
                                 cv2.imshow("Debug", debug_frame)
                                 cv2.waitKey(1)
-                            else:
+                            elif self.VIDEO:
                                 self.rescueFile.write(debug_frame)
 
                     # Wait until the worker has stopped
@@ -220,10 +221,10 @@ class Main:
                         debug_frame = self.follow.get_debug_frame()
 
                         if debug_frame is not None:
-                            if self.DEBUG:
+                            if self.VNC:
                                 cv2.imshow("Debug", debug_frame)
                                 cv2.waitKey(1)
-                            else:
+                            elif self.VIDEO:
                                 self.followFile.write(debug_frame)
 
                     if not self.follow_thread.is_alive():

@@ -119,14 +119,14 @@ class Follow:
     GREEN_HSV_DOWNSAMPLE = 2
 
     # Driving
-    VELOCITY = 350
+    VELOCITY = 380
     OFFSET_GAIN = 20.0
     MAX_TARGET_ANGLE = 90.0
 
     # Gap and recovery
     NO_LINE_LIMIT = 5
 
-    GAP_LIMIT = 20
+    GAP_LIMIT = 15
 
     STUCK_LIMIT = 30
     SAME_FRAME_THRESHOLD = 0.8
@@ -150,7 +150,7 @@ class Follow:
     # PID
     MAX_TURN = 600
 
-    KP = 15.0
+    KP = 13.0
     KI = 0.0
     KD = 0.5
 
@@ -1804,7 +1804,7 @@ class Follow:
                 self.robot.spin_enc(90, 550)
                 time.sleep(3)
                 self.robot.drive_PID(600, -490)
-                time.sleep(5)
+                time.sleep(4.7)
                 self.robot.drive_PID(200)
 
             if self.lineInFrame():
@@ -1863,17 +1863,21 @@ class Follow:
 
             elif result.action == "TURN_LEFT" or result.action == "TURN_RIGHT":
                 if (
-                    time.monotonic() < self.last_green_time + 3
+                    time.monotonic() < self.last_green_time + 1
                     and time.monotonic() > self.last_green_time
                 ):
-                    self.logger.info("Green turn detected within 3s of last green turn")
+                    self.logger.info("Green turn detected within 1s of last green turn")
                     self.robot.drive_PID(200)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                     return
                 self.logger.info(f"Green turn detected {result.action}")
 
-                self.robot.drive_PID(80, result.target_angle * 3)
-                time.sleep(2.2)
+                self.robot.drive_PID(100)
+                time.sleep(0.6)
+                self.robot.spin_enc(result.target_angle - 20)
+                time.sleep(1.9)
+                self.robot.drive_PID(80)
+                time.sleep(0.6)
                 self.robot.stop_moving()
                 time.sleep(0.2)
 

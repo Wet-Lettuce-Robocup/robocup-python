@@ -211,14 +211,14 @@ class Rescue:
         return ""
 
     def rotate_to_target(self, angle):
-        if abs(angle) < 5:
+        if abs(angle) < 1:
             self.logger.info(f"Target angle {angle:.1f}°, no rotation required")
             return
 
         self.logger.info(f"Rotating {angle:.1f}° towards target")
 
         self.robot.spin_enc(angle, 200)
-        time.sleep(angle * 0.06)  # also check pls
+        time.sleep(abs(angle) * 0.1)  # also check pls
 
     def move_to_target(self, distance):
         if distance <= 0:
@@ -227,7 +227,7 @@ class Rescue:
 
         self.logger.info(f"Driving {distance:.2f}m towards target")
         self.robot.drive_dist_enc(distance * 1000, 300)
-        time.sleep(distance * 35)  # pls check and confirm
+        time.sleep(abs(distance) * 40)  # pls check and confirm
 
     def enter_rescue(self):
         self.logger.info("Entering rescue zone")
@@ -271,7 +271,7 @@ class Rescue:
         self.logger.info(f"Claw distance before grab: {claw_distance}mm")
 
         self.robot.drive_dist_enc(50, velocity=250)
-        time.sleep(4)
+        time.sleep(2)
 
         self.robot.claw("grab")
 
@@ -297,10 +297,6 @@ class Rescue:
 
         colour = self.target_evac_point["cls"]
         self.logger.info(f"Dumping balls at {colour} evacuation point")
-
-        # Back away from the evacuation point.
-        self.robot.drive_dist_enc(-100, 500)
-        time.sleep(4)
 
         # Turn around.
         self.robot.spin_enc(180)
@@ -502,10 +498,6 @@ class Rescue:
 
                 self.rotate_to_target(self.target_ball["angle"] * 0.75)
 
-            self.angle_check_count += 1
-
-            if self.angle_check_count >= 8:
-                self.angle_check_count = 0
                 self._transition_to(Task.APPROACH_BALL)
 
         elif self.current_task == Task.APPROACH_BALL:
@@ -520,7 +512,7 @@ class Rescue:
 
             # Stop short of ball and double check distance.
             distance = self.target_ball["dist"]
-            approach_distance = max(0.0, distance - 0.15)
+            approach_distance = max(0.0, distance - 0.20)
             self.logger.info(f"Approaching ball: {approach_distance:.2f}m")
             if approach_distance > 0:
                 self.robot.drive_dist_enc(approach_distance * 1000, 350)
@@ -530,9 +522,7 @@ class Rescue:
         elif self.current_task == Task.LIFT_BALL:
             # lift up ball and check if legit
             if self.task_started:
-                return
-
-            self.task_started = True
+                self.task_started = True
 
             # Re-check the ball position after approaching.
             positions = self.scan_for_balls()
@@ -546,19 +536,34 @@ class Rescue:
             self.target_ball = positions[0]
 
             # Rotate again using the updated position.
-            self.rotate_to_target(self.target_ball["angle"])
+            self.rotate_to_target(self.target_ball["angle"] * 0.75)
 
-            # Move close enough for the claw.
-            distance = self.target_ball["dist"]
-            drive_dist = max(0, distance - 0.08)
+            self.angle_check_count += 1
 
-            if distance > 0.10:
-                self.robot.drive_dist_enc(drive_dist * 1000, 300)
-                time.sleep(3)
+            if self.angle_check_count >= 8:
+                self.angle_check_count = 0
 
-            self.grab_ball()
+                self.robot.spin_enc(5, 200)
 
-            self._transition_to(Task.SCAN)
+                positions = self.scan_for_balls()
+
+                if not positions:
+                    self.logger.warning("Ball lost during approach")
+                    self.target_ball = None
+                    self._transition_to(Task.SCAN)
+                    return
+
+                # Move close enough for the claw.
+                distance = self.target_ball["dist"]
+                drive_dist = max(0, distance - 0.08)
+
+                if distance > 0.10:
+                    self.robot.drive_dist_enc(drive_dist * 1000, 300)
+                    time.sleep(3)
+
+                self.grab_ball()
+
+                self._transition_to(Task.SCAN)
 
         elif self.current_task == Task.TARGET_EVAC_POINT:
             # turn to face evac point
