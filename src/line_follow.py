@@ -354,12 +354,12 @@ class Follow:
     U_TURN_SETTLE_TIME = 5              # seconds to wait for spin_enc to finish
 
     # ---- [TUNE] Rescue (red) detection (original) ----------------------
-    MIN_RED = 200                       # red pixels / contour area that trigger EXIT
+    MIN_RED = 600                       # red pixels / contour area that trigger EXIT
     RED_S_MIN = 70
     RED_V_MIN = 70
 
     # ---- Tower -------------------------------------------------------
-    TOWER_LINE_PIXELS = 5000            # dark pixels needed for lineInFrame()
+    TOWER_LINE_PIXELS = 2000            # dark pixels needed for lineInFrame()
 
     # ==================================================================
     #                    END OF TUNABLE PARAMETERS
@@ -1606,7 +1606,7 @@ class Follow:
         if frame is None:
             return False
 
-        line = cv2.inRange(frame, (0, 0, 0), (45, 45, 45))
+        line = cv2.inRange(frame, (0, 0, 0), (60, 60, 60))
 
         return cv2.countNonZero(line) > self.TOWER_LINE_PIXELS
 
@@ -1642,10 +1642,10 @@ class Follow:
                 self.robot.drive_dist_enc(-50, 300)
                 time.sleep(1.5)
 
-                self.robot.spin_enc(90, 550)
+                self.robot.spin_enc(80, 550)
                 time.sleep(3)
                 self.robot.drive_PID(600, -490)
-                time.sleep(4.7)
+                time.sleep(3.6)
                 self.robot.drive_PID(200)
 
             if self.lineInFrame():
