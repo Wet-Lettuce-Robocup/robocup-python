@@ -317,7 +317,7 @@ class Follow:
     VELOCITY = 380                      # base forward speed
     MAX_TARGET_ANGLE = 90.0             # steering angle (deg) is clipped to +-this before the PID
     MAX_TURN = 600                      # max turn command sent to drive_PID
-    KP = 10.0                           # PID proportional gain (turn per degree of angle)
+    KP = 17.0                           # PID proportional gain (turn per degree of angle)
     KI = 0.0
     KD = 0.1
     TURN_SLOWDOWN_FACTOR = 2            # larger = slows down more in tight turns
