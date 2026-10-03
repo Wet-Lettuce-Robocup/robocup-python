@@ -245,14 +245,25 @@ class Follow:
     # ==================================================================
 
     # ---- Camera ------------------------------------------------------
+    # DownCamera captures 240x135 and crops [17:117, 20:220] -> 200x100. That is already small
+    # (20k pixels), so frames are NOT downscaled further: halving would shrink the line to ~11 px
+    # and force re-scaling every kernel/iteration count for almost no speed gain.
     WIDTH = 200                         # expected frame width (frames are resized to this)
     HEIGHT = 100                        # expected frame height
+
+    # ---- [TUNE] Line size at 200x100 ----------------------------------
+    # ESTIMATE from the previous code (green squares >= 3000 px^2 => ~55 px sides, crossing edge run
+    # <= 25 px): the black line is ~22 px wide, green markers ~2.5x that. Enable debug and read the
+    # "Measured line width" log, then set this to the measured value. The size-dependent values
+    # below (AREA_MIN_*, EXPAND_*, GAP_START_LOCAL_MIN_PIXELS) follow it automatically.
+    LINE_WIDTH_PX = 22
 
     # ---- [TUNE] Black line thresholding -------------------------------
     BLUR_GRAYSCALE = 7                  # box blur on gray image. Higher = smoother, loses thin lines
     BLUR_HSV = 5                        # box blur before HSV (green/red masks)
-    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 125 # must be odd. Neighbourhood used for local threshold. Higher = more global
-    ADAPTIVE_THRESHOLD_C = 50           # pixel counts as black if this much darker than its neighbourhood.
+    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101 # must be odd. ~ image height, so the threshold is close to global. Higher = more global
+    ADAPTIVE_THRESHOLD_C = 60           # pixel counts as black if this much darker than the local mean.
+                                        #   With ~10-30% black in frame the cut-off lands at gray ~80-125.
                                         #   Higher = stricter (only very dark), lower = picks up grey/shadows
 
     # ---- [TUNE] Morphology (clean-up of masks) -----------------------
@@ -264,18 +275,17 @@ class Follow:
     MORPHOLOGY_ITERATIONS_GREEN_ERODE_1 = 1
     MORPHOLOGY_ITERATIONS_GREEN_DILATE = 2
     MORPHOLOGY_ITERATIONS_GREEN_ERODE_2 = 3
-    # ---- [TUNE] Colour ranges, HSV (OpenCV H 0-179) ------------------
-    THRESHOLD_GREEN = ((45, 105, 27), (100, 255, 255))
-
     # ---- [TUNE] Minimum blob sizes (pixels^2) ------------------------
-    AREA_MIN_BLACK = 300                # smaller black blobs are ignored (noise)
-    AREA_MIN_GREEN = 50                 # smaller green blobs are ignored
-    AREA_MIN_WHITE = 100                # white holes smaller than this inside the line are filled
+    AREA_MIN_BLACK = int(LINE_WIDTH_PX * 25)   # = 550. Black blobs smaller than ~25 px of line are ignored (noise).
+                                               #   Also the shortest line stub still seen after a gap.
+    AREA_MIN_GREEN = int(0.2 * (2.5 * LINE_WIDTH_PX) ** 2)  # = 605. ~20% of an expected marker (after morphology).
+    AREA_MIN_WHITE = 100                # white holes smaller than this inside the line are filled (~10x10 px)
 
     # ---- [TUNE] Intersections & green markers ------------------------
-    EXPAND_EDGES = 5                    # px growth of line-exit blobs when checking touching white regions
-    EXPAND_WHITE_INTERSECTION = 50      # px growth of white regions to find the intersection centre
-    GREEN_TRACKING_DISTANCE = 10        # px: same green marker between frames if closer than this
+    EXPAND_EDGES = int(LINE_WIDTH_PX * 0.25)        # = 5. Half a line width would reach across the line; keep it smaller.
+    # px growth of line-exit blobs when checking touching white regions
+    EXPAND_WHITE_INTERSECTION = int(LINE_WIDTH_PX * 2)  # = 44. px growth of white regions to find the intersection centre
+    GREEN_TRACKING_DISTANCE = 15        # px: same green marker between frames if closer than this
     GREEN_IGNORE_THRESHOLD = 100        # frames a non-relevant green marker is tracked before being ignored
 
     # ---- [TUNE] Gaps -------------------------------------------------
@@ -285,7 +295,7 @@ class Follow:
     GAP_RELATIVE_CROP_X = 0.2               # fraction cropped from left AND right during a gap
     GAP_WITH_LINE_TARGET_RELATIVE_OFFSET = 1  # how far ahead (x image height) the gap target is placed
     GAP_START_LOCAL_RADIUS_RELATIVE = 0.4   # radius (x image height) of the circle fitted at the line end
-    GAP_START_LOCAL_MIN_PIXELS = 20         # min pixels inside that circle
+    GAP_START_LOCAL_MIN_PIXELS = int(LINE_WIDTH_PX * 5)  # = 110. min line pixels inside that circle
     GAP_START_LOCAL_MIN_RECT_BLACK_RATIO = 0.7  # min fill of the fitted rectangle
     GAP_START_LOCAL_RECT_BORDER_MARGIN = 2  # rectangle touching the border within this = rejected
     GAP_SEARCH_ANGLE_TOLERANCE_DEG = 30     # cone used to look for the line continuing after a gap
@@ -302,7 +312,9 @@ class Follow:
     SPIN_IN_PLACE_STRENGTH = 0.7        # turn_strength above this -> velocity 0 (spin on the spot)
 
     # ---- [TUNE] No-line behaviour ------------------------------------
-    NO_LINE_FORWARD_FRAMES = 5          # frames of NO_LINE driven slowly forward before reversing
+    NO_LINE_FORWARD_FRAMES = 15         # frames of NO_LINE driven slowly forward before reversing (old GAP_LIMIT).
+                                        #   Camera runs at 20 fps; this counts main-loop iterations, so raise it if your
+                                        #   loop is faster than the camera and gaps get abandoned too early.
     NO_LINE_FORWARD_SPEED_SCALE = 0.5   # fraction of VELOCITY used while creeping forward
     REVERSE_SPEED = -200                # speed used while reversing
 
@@ -327,7 +339,9 @@ class Follow:
     GREEN_H_HIGH = 90
     GREEN_S_LOW = 70
     GREEN_V_LOW = 40
-    GREEN_MIN_AREA = 3000               # green square area limits (px^2)
+    # Same HSV range is now used for the intersection green markers too (these values worked on this camera)
+    THRESHOLD_GREEN = ((GREEN_H_LOW, GREEN_S_LOW, GREEN_V_LOW), (GREEN_H_HIGH, 255, 255))
+    GREEN_MIN_AREA = 3000               # green square area limits (px^2) for the U-turn check. ~(2.5 x LINE_WIDTH_PX)^2 = 3025
     GREEN_MAX_AREA = 15000
     GREEN_PIXEL_THRESHOLD = 400         # cheap pre-check before the full green search
     GREEN_HSV_DOWNSAMPLE = 2
@@ -377,6 +391,8 @@ class Follow:
 
         self.last_green_time = 0
         self.no_line_frames = 0
+        self.measured_line_width = None
+        self._width_log_counter = 0
 
         self.pid = PID(kp=self.KP, kd=self.KD, ki=self.KI)
 
@@ -428,6 +444,17 @@ class Follow:
         # Original black mask: used for crossing flag and green U-turn geometry
         _, orig_black_mask = self._make_black_mask(frame)
         crossing = self._detect_horizontal_crossing(orig_black_mask)
+
+        if debug:
+            width = self._measure_line_width(orig_black_mask)
+            if width is not None:
+                self.measured_line_width = width
+            self._width_log_counter += 1
+            if self._width_log_counter % 20 == 0 and self.measured_line_width is not None:
+                self.logger.info(
+                    f"Measured line width ~{self.measured_line_width:.0f}px "
+                    f"(LINE_WIDTH_PX={self.LINE_WIDTH_PX})"
+                )
 
         # Original green detection -> only the both-sides U-turn is taken from it
         if self._green_present(frame):
@@ -1167,6 +1194,20 @@ class Follow:
 
         return False
 
+    def _measure_line_width(self, black_mask):
+        """Median width of the black line in the lower rows (rows with exactly one run only,
+        so crossings/gaps don't distort it). Debug aid for setting LINE_WIDTH_PX."""
+        h, w = black_mask.shape
+        widths = []
+        for y in range(int(h * 0.6), h, 3):
+            row = (black_mask[y] > 0).astype(np.int8)
+            d = np.diff(np.concatenate(([0], row, [0])))
+            runs = np.where(d == -1)[0] - np.where(d == 1)[0]
+            runs = runs[(runs >= 3) & (runs <= w * 0.35)]
+            if len(runs) == 1:
+                widths.append(int(runs[0]))
+        return float(np.median(widths)) if len(widths) >= 5 else None
+
     def _find_edge_run(self, black_mask, edge):
         """Find the longest compact black run touching one image edge."""
         h, w = black_mask.shape
@@ -1574,7 +1615,10 @@ class Follow:
 
         self.last_time = now
 
-        self.raw_frame, self.cropped_frame = self.camera.get_frame()
+        frames = self.camera.get_frame()
+        if frames is None:  # DownCamera returns None until the first frame has arrived
+            return
+        self.raw_frame, self.cropped_frame = frames[0], frames[1]
         r_frame = self.raw_frame
         c_frame = self.cropped_frame
 
