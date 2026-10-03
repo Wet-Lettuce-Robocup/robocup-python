@@ -245,7 +245,7 @@ class Rescue:
         else:
             self.logger.warning("Front dist not valid, driving 400mm anyway")
             self.robot.drive_dist_enc(400)
-        time.sleep(3)
+        time.sleep(5)
 
         left_dist = self.robot.get_side_distance()
         if 0 < left_dist < 200:
@@ -461,7 +461,7 @@ class Rescue:
 
             if time.monotonic() > self.scan_timeout:
                 self.logger.info("Scan timeout reached, moving to find more balls")
-                front_dist = self.robot.get_front_dist()
+                front_dist = self.robot.get_front_distance()
                 if front_dist > 0 and front_dist < 200:
                     self.robot.drive_PID(-500, 400)
                     time.sleep(1)
