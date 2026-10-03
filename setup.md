@@ -82,3 +82,41 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install ultralytics opencv-python adafruit-circuitpython-vl53l1x luma.oled
 
 ```
+
+Create service script to start at boot:
+`sudo nano /etc/systemd/system/robot.service`
+
+Paste in:
+```bash
+[Unit]
+Description=Robot
+After=multi-user.target
+
+[Service]
+Type=simple
+
+User=robot
+WorkingDirectory=/home/robot/robocup_python/src
+
+ExecStartPre=/usr/bin/pinctrl 16 op dh
+ExecStartPre=/usr/bin/pinctrl 17 op dh
+ExecStart=/home/robot/robocup_python/.venv/bin/python /home/robot/robocup_python/main.py
+
+Restart=on-failure
+RestartSec=2
+
+Environment=PYTHONUNBUFFERED=1
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then run:
+``` bash
+sudo systemctl daemon-reload
+sudo systemctl enable robot.service
+sudo systemctl start robot.service
+```

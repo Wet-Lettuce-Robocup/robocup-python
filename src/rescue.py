@@ -195,14 +195,18 @@ class Rescue:
         return []
 
     def get_target_evac_point(self):
-        tray_1 = self.ball_storage["tray_1"]
-        tray_2 = self.ball_storage["tray_2"]
+        # tray_1 = self.ball_storage["tray_1"]
+        # tray_2 = self.ball_storage["tray_2"]
 
-        if tray_1 == "silver" and tray_2 == "silver":
+        # if tray_1 == "silver" and tray_2 == "silver":
+        #     return "green"
+        # elif tray_1 == "red":
+        #     return "red"
+        # return ""
+        if not self.green_found:
             return "green"
-        elif tray_1 == "red":
+        if self.green_found and not self.red_found:
             return "red"
-        return ""
 
     def rotate_to_target(self, angle):
         if abs(angle) < 1:
@@ -264,8 +268,11 @@ class Rescue:
         claw_distance = self.robot.get_claw_distance()
         self.logger.info(f"Claw distance before grab: {claw_distance}mm")
 
-        self.robot.drive_dist_enc(60, velocity=250)
-        time.sleep(2)
+        if claw_distance > -1 and claw_distance < 100:
+            self.robot.drive_dist_enc(claw_distance + 5, 250)
+        else:
+            self.robot.drive_dist_enc(65, velocity=250)
+        time.sleep(2.5)
 
         self.robot.claw("grab")
 
@@ -278,7 +285,7 @@ class Rescue:
 
         # Reverse away from the ball.
         self.robot.drive_dist_enc(-150, 400)
-        time.sleep(3)
+        time.sleep(2.5)
 
         # Lift the ball.
         self.robot.lift("up")
@@ -294,16 +301,18 @@ class Rescue:
 
         # Turn around.
         self.robot.spin_enc(180)
-        time.sleep(10)
+        time.sleep(8)
 
         # Move backwards/towards the drop area.
-        self.robot.drive_dist_enc(-150, 400)
+        self.robot.drive_dist_enc(-160, 400)
         time.sleep(4)
-        self.robot.drive_dist_enc(10, 300)
-        time.sleep(1)
 
         self.robot.tray("release")
-        time.sleep(3)
+        time.sleep(2)
+        self.robot.drive_dist_enc(10, 300)
+        time.sleep(1)
+        self.robot.drive_dist_enc(-10, 300)
+        time.sleep(1)
         self.robot.tray("reset")
 
         self.robot.drive_dist_enc(300, 400)
@@ -495,6 +504,11 @@ class Rescue:
 
                 self.task_started = True
 
+                if self.target_ball["dist"] < 0.15:
+                    self.robot.drive_dist_enc(-150)
+                    time.sleep(3)
+                    self._transition_to(Task.SCAN)
+
                 self.logger.info(f"Rotating to {self.target_ball['cls']} ball")
 
                 self.robot.claw("release")
@@ -520,7 +534,7 @@ class Rescue:
             self.logger.info(f"Approaching ball: {approach_distance:.2f}m")
             if approach_distance > 0:
                 self.robot.drive_dist_enc(approach_distance * 1000, 350)
-                time.sleep(4)
+                time.sleep(abs(approach_distance) * 35)
             self._transition_to(Task.LIFT_BALL)
 
         elif self.current_task == Task.LIFT_BALL:
@@ -544,10 +558,10 @@ class Rescue:
 
             self.angle_check_count += 1
 
-            if self.angle_check_count >= 8:
+            if self.angle_check_count >= 5:
                 self.angle_check_count = 0
 
-                self.robot.spin_enc(5, 200)
+                self.robot.spin_enc(8, 200)
 
                 positions = self.scan_for_balls()
 
@@ -563,7 +577,10 @@ class Rescue:
 
                 if distance > 0.10:
                     self.robot.drive_dist_enc(drive_dist * 1000, 300)
-                    time.sleep(3)
+                    time.sleep(abs(drive_dist) * 35)
+                elif distance < 0.1:
+                    self.robot.drive_dist_enc(drive_dist - 0.1, 300)
+                    time.sleep(abs(drive_dist * 35))
 
                 self.grab_ball()
 
@@ -596,7 +613,7 @@ class Rescue:
             self.rotate_to_target(self.target_evac_point["angle"] * 0.75)
             self.angle_check_count += 1
 
-            if self.angle_check_count >= 8:
+            if self.angle_check_count >= 5:
                 self.angle_check_count = 0
 
                 positions = self.scan_for_evac_points()
@@ -629,12 +646,12 @@ class Rescue:
                     self.robot.drive_dist_enc(approach_distance * 1000)
                     time.sleep(5)
 
-                self.robot.drive_PID(80)
+                self.robot.drive_PID(120)
 
             if self.robot.limit_switch_pressed():
                 self.robot.stop_moving()
                 time.sleep(0.1)
-                self.robot.drive_dist_enc(-140)
+                self.robot.drive_dist_enc(-100)
                 time.sleep(3)
                 self._transition_to(Task.DUMP_EVAC_POINT)
 

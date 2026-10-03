@@ -142,7 +142,7 @@ class Follow:
     BOTTOM_REVERSE_FRAMES = 12
 
     # Rescue detection
-    MIN_RED = 200
+    MIN_RED = 500
 
     RED_S_MIN = 70
     RED_V_MIN = 70
@@ -1794,10 +1794,12 @@ class Follow:
         line = cv2.inRange(
             frame,
             (0, 0, 0),
-            (45, 45, 45),
+            (60, 60, 60),
         )
 
-        return cv2.countNonZero(line) > 5000
+        num = cv2.countNonZero(line)
+        self.logger.info(f"Black px {num}")
+        return num > 2000
 
     def _reset_line_tracking(self):
         self.pid.reset()
@@ -1840,10 +1842,10 @@ class Follow:
                 self.robot.drive_dist_enc(-50, 300)
                 time.sleep(1.5)
 
-                self.robot.spin_enc(90, 550)
+                self.robot.spin_enc(80, 550)
                 time.sleep(3)
                 self.robot.drive_PID(600, -490)
-                time.sleep(4.7)
+                time.sleep(3 / 6)
                 self.robot.drive_PID(200)
 
             if self.lineInFrame():
