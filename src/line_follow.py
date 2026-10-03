@@ -362,8 +362,8 @@ class Follow:
 
     # ---- [TUNE] Rescue (red) detection (original) ----------------------
     MIN_RED = 600  # red pixels / contour area that trigger EXIT
-    RED_S_MIN = 70
-    RED_V_MIN = 70
+    RED_S_MIN = 75
+    RED_V_MIN = 65
 
     # ---- Tower -------------------------------------------------------
     TOWER_LINE_PIXELS = 2000  # dark pixels needed for lineInFrame()
@@ -1173,13 +1173,13 @@ class Follow:
         mask1 = cv2.inRange(
             hsv,
             np.array([0, self.RED_S_MIN, self.RED_V_MIN], dtype=np.uint8),
-            np.array([5, 255, 255], dtype=np.uint8),
+            np.array([3, 230, 180], dtype=np.uint8),
         )
 
         mask2 = cv2.inRange(
             hsv,
             np.array([170, self.RED_S_MIN, self.RED_V_MIN], dtype=np.uint8),
-            np.array([180, 255, 255], dtype=np.uint8),
+            np.array([180, 230, 180], dtype=np.uint8),
         )
 
         red_mask = mask1 | mask2
