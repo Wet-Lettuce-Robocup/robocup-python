@@ -47,18 +47,10 @@ class Main:
         self.robot = Robot(self.i2c_controller)
         self.fan = FanController()
 
-        self.rescue = Rescue(self.i2c_controller, self.robot)
-        self.follow = Follow(
-            self.i2c_controller,
-            self.robot,
-            debug=self.DEBUG
-        )
+        self.rescue = Rescue(self.i2c_controller, self.robot, debug=self.DEBUG)
+        self.follow = Follow(self.i2c_controller, self.robot, debug=self.DEBUG)
 
-        self.button = Button(
-            6,
-            pull_up=True,
-            bounce_time=self.BUTTON_DEBOUNCE_TIME
-        )
+        self.button = Button(6, pull_up=True, bounce_time=self.BUTTON_DEBOUNCE_TIME)
 
         self.button.when_released = self._on_pressed
 
@@ -78,21 +70,14 @@ class Main:
         self.target_line_follow_loop_time = None
 
         if self.VIDEO and self.DEBUG:
-
             print("Working directory:", os.getcwd())
 
             self.followFile = cv2.VideoWriter(
-                "followOutput.avi",
-                cv2.VideoWriter_fourcc(*"MJPG"),
-                10,
-                (200, 100)
+                "followOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (200, 100)
             )
 
             self.rescueFile = cv2.VideoWriter(
-                "rescueOutput.avi",
-                cv2.VideoWriter_fourcc(*"MJPG"),
-                10,
-                (1536, 864)
+                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (1384, 559)
             )
 
             print("Follow writer opened:", self.followFile.isOpened())
@@ -106,9 +91,7 @@ class Main:
         if self.current_task == task:
             return
 
-        self.logger.info(
-            f"Main task: {self.current_task.name} -> {task.name}"
-        )
+        self.logger.info(f"Main task: {self.current_task.name} -> {task.name}")
 
         self.current_task = task
         self.task_started = False
@@ -174,7 +157,6 @@ class Main:
                 self._handle_button()
 
                 if self.current_task == Task.INIT:
-
                     if self.task_started:
                         pass
 
@@ -190,7 +172,6 @@ class Main:
                     pass
 
                 elif self.current_task == Task.RESCUE:
-
                     if not self.task_started:
                         self.task_started = True
                         self.reset_stop()
@@ -210,22 +191,17 @@ class Main:
                         debug_frame = self.rescue.get_debug_frame()
 
                         if debug_frame is not None:
-
                             if self.VNC:
                                 cv2.imshow("Debug", debug_frame)
                                 cv2.waitKey(1)
 
                             elif self.VIDEO:
-                                debug_frame = cv2.resize(
-                                    debug_frame,
-                                    (1536, 864)
-                                )
+                                debug_frame = cv2.resize(debug_frame, (1536, 864))
 
                                 self.rescueFile.write(debug_frame)
 
                     # Wait until the worker has stopped
                     if not self.rescue_thread.is_alive():
-
                         cv2.destroyAllWindows()
 
                         if self.rescue.is_finished():
@@ -239,7 +215,6 @@ class Main:
                     time.sleep(0.05)
 
                 elif self.current_task == Task.FOLLOW:
-
                     if not self.task_started:
                         self.task_started = True
                         self.reset_stop()
@@ -259,21 +234,16 @@ class Main:
                         debug_frame = self.follow.get_debug_frame()
 
                         if debug_frame is not None:
-
                             if self.VNC:
                                 cv2.imshow("Debug", debug_frame)
                                 cv2.waitKey(1)
 
                             elif self.VIDEO:
-                                debug_frame = cv2.resize(
-                                    debug_frame,
-                                    (200, 100)
-                                )
+                                debug_frame = cv2.resize(debug_frame, (200, 100))
 
                                 self.followFile.write(debug_frame)
 
                     if not self.follow_thread.is_alive():
-
                         cv2.destroyAllWindows()
 
                         if self.follow.is_finished():
@@ -287,18 +257,14 @@ class Main:
                     time.sleep(0.05)
 
             except Exception as e:
-                self.logger.error(
-                    f"Caught an error in main loop! {e}"
-                )
+                self.logger.error(f"Caught an error in main loop! {e}")
 
     def rescue_loop(self):
 
         try:
             while not self.stop_event.is_set():
-
-                self.target_rescue_loop_time = (
-                    time.monotonic()
-                    + (1 / self.RESCUE_LOOPS_PER_SECOND)
+                self.target_rescue_loop_time = time.monotonic() + (
+                    1 / self.RESCUE_LOOPS_PER_SECOND
                 )
 
                 self.rescue.tick_rescue()
@@ -309,9 +275,7 @@ class Main:
                 now = time.monotonic()
 
                 if now < self.target_rescue_loop_time:
-                    time.sleep(
-                        self.target_rescue_loop_time - now
-                    )
+                    time.sleep(self.target_rescue_loop_time - now)
 
             self.robot.stop_moving()
 
@@ -327,10 +291,8 @@ class Main:
 
         try:
             while not self.stop_event.is_set():
-
-                self.target_line_follow_loop_time = (
-                    time.monotonic()
-                    + (1 / self.FOLLOW_LOOPS_PER_SECOND)
+                self.target_line_follow_loop_time = time.monotonic() + (
+                    1 / self.FOLLOW_LOOPS_PER_SECOND
                 )
 
                 self.follow.main()
@@ -341,9 +303,7 @@ class Main:
                 now = time.monotonic()
 
                 if now < self.target_line_follow_loop_time:
-                    time.sleep(
-                        self.target_line_follow_loop_time - now
-                    )
+                    time.sleep(self.target_line_follow_loop_time - now)
 
             self.robot.stop_moving()
 
