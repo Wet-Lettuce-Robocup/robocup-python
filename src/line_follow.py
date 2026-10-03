@@ -269,16 +269,14 @@ class Follow:
     # "fixed"    = previous version's method: pixel is black if gray < BLACK_THRESH_FIXED (default, worked on this camera)
     # "adaptive" = center_processor's method: black if darker than local mean by ADAPTIVE_THRESHOLD_C
     BLACK_THRESHOLD_MODE = "fixed"
-    BLACK_THRESH_FIXED = 80  # fixed mode: gray (0-255) below this = black. Snapshot: line 65-88, white 200+, so ~100
-    #   Raise if the line is missed (dim light / grey tape), lower if shadows appear
-    BLUR_GRAYSCALE = 7  # box blur on gray image. Higher = smoother, loses thin lines
-    BLUR_HSV = 5  # box blur before HSV (green/red masks)
-    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101  # (adaptive mode only) must be odd. ~ image height, so the threshold is close to global. Higher = more global
-    ADAPTIVE_THRESHOLD_C = (
-        60  # (adaptive mode only) pixel counts as black if this much darker than the local mean.
-    )
-    #   With ~10-30% black in frame the cut-off lands at gray ~80-125.
-    #   Higher = stricter (only very dark), lower = picks up grey/shadows
+    BLACK_THRESH_FIXED = 100            # fixed mode: gray (0-255) below this = black. Snapshot: line 65-88, white 200+, so ~100
+                                        #   Raise if the line is missed (dim light / grey tape), lower if shadows appear
+    BLUR_GRAYSCALE = 7                  # box blur on gray image. Higher = smoother, loses thin lines
+    BLUR_HSV = 5                        # box blur before HSV (green/red masks)
+    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101 # (adaptive mode only) must be odd. ~ image height, so the threshold is close to global. Higher = more global
+    ADAPTIVE_THRESHOLD_C = 60           # (adaptive mode only) pixel counts as black if this much darker than the local mean.
+                                        #   With ~10-30% black in frame the cut-off lands at gray ~80-125.
+                                        #   Higher = stricter (only very dark), lower = picks up grey/shadows
 
     # ---- [TUNE] Morphology (clean-up of masks) -----------------------
     MORPHOLOGY_KERNEL_SIZE = 5  # round kernel for black/red
@@ -290,27 +288,23 @@ class Follow:
     MORPHOLOGY_ITERATIONS_GREEN_DILATE = 2
     MORPHOLOGY_ITERATIONS_GREEN_ERODE_2 = 3
     # ---- [TUNE] Minimum blob sizes (pixels^2) ------------------------
-    AREA_MIN_BLACK = int(
-        LINE_WIDTH_PX * 25
-    )  # = 550. Black blobs smaller than ~25 px of line are ignored (noise).
-    #   Also the shortest line stub still seen after a gap.
-    AREA_MIN_GREEN = int(
-        0.2 * (2.5 * LINE_WIDTH_PX) ** 2
-    )  # = 605. ~20% of an expected marker (after morphology).
-    AREA_MIN_WHITE = 100  # white holes smaller than this inside the line are filled (~10x10 px)
+    AREA_MIN_BLACK = int(LINE_WIDTH_PX * 25)   # = 550. Black blobs smaller than ~25 px of line are ignored (noise).
+                                               #   Also the shortest line stub still seen after a gap.
+    AREA_MIN_GREEN = int(0.04 * (2.5 * LINE_WIDTH_PX) ** 2)  # = 272. ~4% of a full marker (after morphology), so a marker that is
+                                                             #   mostly out of frame (strip ~55x19 px = 430 px^2) still counts.
+                                                             #   Raise if specks/reflections are mistaken for markers.
+    AREA_MIN_WHITE = 100                # white holes smaller than this inside the line are filled (~10x10 px)
 
     # ---- [TUNE] Intersections & green markers ------------------------
     EXPAND_EDGES = int(
         LINE_WIDTH_PX * 0.25
     )  # = 5. Half a line width would reach across the line; keep it smaller.
     # px growth of line-exit blobs when checking touching white regions
-    EXPAND_WHITE_INTERSECTION = int(
-        LINE_WIDTH_PX * 2
-    )  # = 44. px growth of white regions to find the intersection centre
-    GREEN_TRACKING_DISTANCE = 15  # px: same green marker between frames if closer than this
-    GREEN_IGNORE_THRESHOLD = (
-        100  # frames a non-relevant green marker is tracked before being ignored
-    )
+    EXPAND_WHITE_INTERSECTION = int(LINE_WIDTH_PX * 2)  # = 44. px growth of white regions to find the intersection centre
+    GREEN_IGNORE_BORDER_TOUCHING = False  # True = ignore markers cut off by the image edge (center_processor default).
+                                          #   False = use them; needed when the camera is close and markers are partly out of frame
+    GREEN_TRACKING_DISTANCE = 15        # px: same green marker between frames if closer than this
+    GREEN_IGNORE_THRESHOLD = 100        # frames a non-relevant green marker is tracked before being ignored
 
     # ---- [TUNE] Gaps -------------------------------------------------
     GAP_CONTOUR_MIN_ASPECT_RATIO = (
@@ -694,11 +688,7 @@ class Follow:
             start_contour, end_contour = None, None
 
             if edge_contours:
-                grn_contours = [
-                    ContourHandler(c, grayscale_frame)
-                    for c in grn_contours_filtered
-                    if not contour_touches_border(grayscale_frame, c)
-                ]
+                grn_contours = [ContourHandler(c, grayscale_frame) for c in grn_contours_filtered if not (self.GREEN_IGNORE_BORDER_TOUCHING and contour_touches_border(grayscale_frame, c))]
                 self._update_green_marker_memory(grn_contours, debug_frame=debug_frame)
 
                 last_start = self._last_start_point
