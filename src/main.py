@@ -1,4 +1,3 @@
-```python
 import logging
 import threading
 import time
@@ -49,7 +48,11 @@ class Main:
         self.fan = FanController()
 
         self.rescue = Rescue(self.i2c_controller, self.robot)
-        self.follow = Follow(self.i2c_controller, self.robot)
+        self.follow = Follow(
+            self.i2c_controller,
+            self.robot,
+            debug=self.DEBUG
+        )
 
         self.button = Button(
             6,
@@ -385,4 +388,3 @@ if __name__ == "__main__":
     finally:
         if runtime is not None:
             runtime.cleanup()
-```
