@@ -188,15 +188,24 @@ class Robot:
         dist = self.i2c_controller.read_tof("side")
         if dist > 0:
             return dist
+        dist = self.i2c_controller.read_tof("side")
+        if dist > 0:
+            return dist
         return -1
 
     def get_front_distance(self) -> int:
         dist = self.i2c_controller.read_tof("front")
         if dist > 0:
             return dist
+        dist = self.i2c_controller.read_tof("front")
+        if dist > 0:
+            return dist
         return -1
 
     def get_claw_distance(self) -> int:
+        dist = self.i2c_controller.read_tof("claw")
+        if dist > 0:
+            return dist
         dist = self.i2c_controller.read_tof("claw")
         if dist > 0:
             return dist
