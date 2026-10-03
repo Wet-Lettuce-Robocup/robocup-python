@@ -256,13 +256,18 @@ class Follow:
     # <= 25 px): the black line is ~22 px wide, green markers ~2.5x that. Enable debug and read the
     # "Measured line width" log, then set this to the measured value. The size-dependent values
     # below (AREA_MIN_*, EXPAND_*, GAP_START_LOCAL_MIN_PIXELS) follow it automatically.
-    LINE_WIDTH_PX = 22
+    LINE_WIDTH_PX = 33                  # measured from a real snapshot: 32-35 px wide, top bar 29-35 px thick
 
     # ---- [TUNE] Black line thresholding -------------------------------
+    # "fixed"    = previous version's method: pixel is black if gray < BLACK_THRESH_FIXED (default, worked on this camera)
+    # "adaptive" = center_processor's method: black if darker than local mean by ADAPTIVE_THRESHOLD_C
+    BLACK_THRESHOLD_MODE = "fixed"
+    BLACK_THRESH_FIXED = 80            # fixed mode: gray (0-255) below this = black. Snapshot: line 65-88, white 200+, so ~100
+                                        #   Raise if the line is missed (dim light / grey tape), lower if shadows appear
     BLUR_GRAYSCALE = 7                  # box blur on gray image. Higher = smoother, loses thin lines
     BLUR_HSV = 5                        # box blur before HSV (green/red masks)
-    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101 # must be odd. ~ image height, so the threshold is close to global. Higher = more global
-    ADAPTIVE_THRESHOLD_C = 60           # pixel counts as black if this much darker than the local mean.
+    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101 # (adaptive mode only) must be odd. ~ image height, so the threshold is close to global. Higher = more global
+    ADAPTIVE_THRESHOLD_C = 60           # (adaptive mode only) pixel counts as black if this much darker than the local mean.
                                         #   With ~10-30% black in frame the cut-off lands at gray ~80-125.
                                         #   Higher = stricter (only very dark), lower = picks up grey/shadows
 
@@ -322,13 +327,13 @@ class Follow:
     BLUR_SIZE = 9
     MORPH_CLOSE_SIZE = 7
     MORPH_OPEN_SIZE = 3
-    BLACK_THRESH = 60                   # gray < this = black (only for crossing / U-turn geometry)
+    BLACK_THRESH = 100                  # gray < this = black (only for crossing / U-turn geometry). Keep equal to BLACK_THRESH_FIXED
     REMOVE_RED_FROM_BLACK = True        # original silver fix: red pixels are removed from the black mask
 
     # ---- [TUNE] Horizontal crossing detection (original, flag only) ---
     CROSSING_SIDE_Y_TOLERANCE = 8
     CROSSING_MIN_EDGE_RUN = 3
-    CROSSING_MAX_EDGE_RUN = 25
+    CROSSING_MAX_EDGE_RUN = 45          # must exceed the line width (~33 px), more for angled lines
     CROSSING_TOP_X_TOLERANCE = 45
 
     # ---- [TUNE] Green U-turn detection (original) ----------------------
@@ -1056,7 +1061,10 @@ class Follow:
         return blurred_grayscale_frame, hsv_frame
 
     def _generate_binaries(self, grayscale_frame, hsv_frame):
-        blk_binary = adaptive_threshold(grayscale_frame, self.ADAPTIVE_THRESHOLD_BLOCK_SIZE, self.ADAPTIVE_THRESHOLD_C, True)
+        if self.BLACK_THRESHOLD_MODE == "fixed":
+            _, blk_binary = cv2.threshold(grayscale_frame, self.BLACK_THRESH_FIXED, 255, cv2.THRESH_BINARY_INV)
+        else:
+            blk_binary = adaptive_threshold(grayscale_frame, self.ADAPTIVE_THRESHOLD_BLOCK_SIZE, self.ADAPTIVE_THRESHOLD_C, True)
         grn_binary = cv2.inRange(hsv_frame, self.THRESHOLD_GREEN[0], self.THRESHOLD_GREEN[1])
         return blk_binary, grn_binary
 
