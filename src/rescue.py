@@ -502,11 +502,11 @@ class Rescue:
 
                 self.rotate_to_target(self.target_ball["angle"] * 0.75)
 
-                self.angle_check_count += 1
+            self.angle_check_count += 1
 
-                if self.angle_check_count >= 8:
-                    self.angle_check_count = 0
-                    self._transition_to(Task.APPROACH_BALL)
+            if self.angle_check_count >= 8:
+                self.angle_check_count = 0
+                self._transition_to(Task.APPROACH_BALL)
 
         elif self.current_task == Task.APPROACH_BALL:
             # move to approach a ball
