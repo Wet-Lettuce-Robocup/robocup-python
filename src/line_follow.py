@@ -152,7 +152,7 @@ class Follow:
 
     KP = 10.0
     KI = 0.0
-    KD = 0.1
+    KD = 0.08
 
     def __init__(self, i2c_controller, robot, debug=False):
         self.logger = logging.getLogger("robot.line_follow")

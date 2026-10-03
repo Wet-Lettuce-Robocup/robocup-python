@@ -30,7 +30,7 @@ class Main:
 
     VNC = False
     DEBUG = True
-    VIDEO = False
+    VIDEO = True
 
     def __init__(self):
 
@@ -46,8 +46,8 @@ class Main:
         self.robot = Robot(self.i2c_controller)
         self.fan = FanController()
 
-        self.rescue = Rescue(self.i2c_controller, self.robot)
-        self.follow = Follow(self.i2c_controller, self.robot)
+        self.rescue = Rescue(self.i2c_controller, self.robot, debug=self.DEBUG)
+        self.follow = Follow(self.i2c_controller, self.robot, debug=self.DEBUG)
 
         self.button = Button(6, pull_up=True, bounce_time=self.BUTTON_DEBOUNCE_TIME)
 
@@ -73,7 +73,7 @@ class Main:
                 "followOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (200, 100)
             )
             self.rescueFile = cv2.VideoWriter(
-                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (1536, 864)
+                "rescueOutput.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (1384, 559)
             )
         else:
             self.followFile = None
@@ -298,6 +298,12 @@ class Main:
         self.i2c_controller.front_tof_en.close()
         self.i2c_controller.side_tof_en.close()
         self.i2c_controller.claw_tof_en.close()
+
+        if self.followFile is not None:
+            self.followFile.release()
+
+        if self.rescueFile is not None:
+            self.rescueFile.release()
 
         cv2.destroyAllWindows()
 
