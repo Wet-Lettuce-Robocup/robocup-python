@@ -256,13 +256,13 @@ class Follow:
     # <= 25 px): the black line is ~22 px wide, green markers ~2.5x that. Enable debug and read the
     # "Measured line width" log, then set this to the measured value. The size-dependent values
     # below (AREA_MIN_*, EXPAND_*, GAP_START_LOCAL_MIN_PIXELS) follow it automatically.
-    LINE_WIDTH_PX = 22
+    LINE_WIDTH_PX = 33                  # measured from a real snapshot: 32-35 px wide, top bar 29-35 px thick
 
     # ---- [TUNE] Black line thresholding -------------------------------
     # "fixed"    = previous version's method: pixel is black if gray < BLACK_THRESH_FIXED (default, worked on this camera)
     # "adaptive" = center_processor's method: black if darker than local mean by ADAPTIVE_THRESHOLD_C
     BLACK_THRESHOLD_MODE = "fixed"
-    BLACK_THRESH_FIXED = 60             # fixed mode: gray (0-255) below this = black.
+    BLACK_THRESH_FIXED = 80            # fixed mode: gray (0-255) below this = black. Snapshot: line 65-88, white 200+, so ~100
                                         #   Raise if the line is missed (dim light / grey tape), lower if shadows appear
     BLUR_GRAYSCALE = 7                  # box blur on gray image. Higher = smoother, loses thin lines
     BLUR_HSV = 5                        # box blur before HSV (green/red masks)
@@ -327,13 +327,13 @@ class Follow:
     BLUR_SIZE = 9
     MORPH_CLOSE_SIZE = 7
     MORPH_OPEN_SIZE = 3
-    BLACK_THRESH = 60                   # gray < this = black (only for crossing / U-turn geometry)
+    BLACK_THRESH = 100                  # gray < this = black (only for crossing / U-turn geometry). Keep equal to BLACK_THRESH_FIXED
     REMOVE_RED_FROM_BLACK = True        # original silver fix: red pixels are removed from the black mask
 
     # ---- [TUNE] Horizontal crossing detection (original, flag only) ---
     CROSSING_SIDE_Y_TOLERANCE = 8
     CROSSING_MIN_EDGE_RUN = 3
-    CROSSING_MAX_EDGE_RUN = 25
+    CROSSING_MAX_EDGE_RUN = 45          # must exceed the line width (~33 px), more for angled lines
     CROSSING_TOP_X_TOLERANCE = 45
 
     # ---- [TUNE] Green U-turn detection (original) ----------------------
