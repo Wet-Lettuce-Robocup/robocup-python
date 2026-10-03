@@ -196,8 +196,6 @@ class Main:
                                 cv2.waitKey(1)
 
                             elif self.VIDEO:
-                                debug_frame = cv2.resize(debug_frame, (1536, 864))
-
                                 self.rescueFile.write(debug_frame)
 
                     # Wait until the worker has stopped
