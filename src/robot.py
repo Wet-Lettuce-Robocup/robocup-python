@@ -29,7 +29,7 @@ class Robot:
 
         self.limit_switch_triggered = False
 
-        self.limit_switch.when_pressed = self._limit_switch_was_pressed
+        self.limit_switch.when_pressed = self.limit_switch_was_pressed
 
     def drive(self, vel: int = 50, angular_vel: int = 0) -> None:
         vel = int(vel)
@@ -243,7 +243,7 @@ class Robot:
         """Returns True if limit switch is pressed in that moment."""
         return self.limit_switch.is_pressed
 
-    def _limit_switch_was_pressed(self):
+    def limit_switch_was_pressed(self):
         """Check if limit switch was pressed after last reset (for rescue, may not use)"""
         self.limit_switch_triggered = True
 

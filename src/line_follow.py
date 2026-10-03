@@ -92,7 +92,7 @@ class Follow:
 
     MIN_LINE_ROWS = 8
 
-    MAX_CENTRE_SHIFT_PER_ROW = 9.0
+    MAX_CENTRE_SHIFT_PER_ROW = 18.0
 
     INITIAL_CENTRE_SEARCH = 100.0
 
@@ -132,9 +132,9 @@ class Follow:
     SAME_FRAME_THRESHOLD = 0.8
 
     LOWER_LINE_LIMIT = 0.75
-    LOWER_LINE_REVERSE_THRESH = 0.80
+    LOWER_LINE_REVERSE_THRESH = 0.70
 
-    MIN_BOTTOM_LINE_POINTS = 8
+    MIN_BOTTOM_LINE_POINTS = 6
     BOTTOM_LINE_MIN_HEIGHT = 4
 
     BOTTOM_SHARP_ANGLE = 20.0
@@ -150,9 +150,9 @@ class Follow:
     # PID
     MAX_TURN = 600
 
-    KP = 13.0
+    KP = 10.0
     KI = 0.0
-    KD = 0.5
+    KD = 0.1
 
     def __init__(self, i2c_controller, robot, debug=False):
         self.logger = logging.getLogger("robot.line_follow")
@@ -570,9 +570,48 @@ class Follow:
         else:
             self.no_line_frames += 1
 
+            recent_turn = abs(self.last_target_angle) >= self.BOTTOM_SHARP_HISTORY_ANGLE
+
+            if self.line_angle_history:
+                recent_angles = np.asarray(
+                    list(self.line_angle_history)[-4:],
+                    dtype=np.float32,
+                )
+
+                recent_angle = float(np.median(np.abs(recent_angles)))
+
+                recent_turn = recent_turn or recent_angle >= self.BOTTOM_SHARP_HISTORY_ANGLE
+
+            if recent_turn and self.last_line_frame is not None:
+                self.recovering = True
+
+                turn_direction = np.sign(self.last_target_angle)
+
+                if turn_direction == 0:
+                    turn_direction = 1.0
+
+                target_angle = 90.0 * turn_direction
+
+                result = LineFollowResult(
+                    target_angle=target_angle,
+                    action="FOLLOW",
+                    line_detected=False,
+                    gap_detected=False,
+                    horizontal_crossing=crossing["detected"],
+                    bottom_only=True,
+                    sharp_bend=True,
+                    recovering=True,
+                    no_line_frames=self.no_line_frames,
+                    gap_frames=0,
+                    same_frame_frames=same_frame,
+                    bottom_only_frames=self.bottom_only_frames,
+                    last_line_angle=self.last_line_angle,
+                    last_line_offset=self.last_line_offset,
+                )
+
             # Line disappeared -> probably a gap
 
-            if self.last_line_frame is not None:
+            elif self.last_line_frame is not None:
                 self.in_gap = True
                 self.gap_frames += 1
 
@@ -1872,8 +1911,10 @@ class Follow:
                     return
                 self.logger.info(f"Green turn detected {result.action}")
 
+                self.robot.drive_PID(80)
+                time.sleep(0.2)
                 self.robot.drive_PID(80, result.target_angle * 3)
-                time.sleep(2.2)
+                time.sleep(2.0)
                 self.robot.stop_moving()
                 time.sleep(0.2)
 
