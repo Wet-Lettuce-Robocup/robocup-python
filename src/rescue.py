@@ -282,23 +282,26 @@ class Rescue:
         self.logger.info(f"Claw distance after grab: {claw_distance}mm")
 
         if claw_distance > 15:
-            self.logger.warning("Ball must have been lost? Going back to scanning anyway")
+            self.logger.warning("Ball must have been lost? Trying again")
             self.robot.lift("up")
             self.robot.drive_dist_enc(-200, 500)
             time.sleep(2)
             self.target_ball = None
-            self._transition_to(Task.SCAN)
+            self._transition_to(Task.APPROACH_BALL)
+            return
 
         self.tray_handler("grab", colour)
 
         # Reverse away from the ball.
         dist = self.robot.get_front_distance()
         if dist > 0 and dist < 150:
+            self.logger.info("Wall is very close, reversing...")
             self.robot.drive_dist_enc(-150, 400)
             time.sleep(2)
         elif dist > 500 and dist < 800:
-            self.robot.drive_dist_enc(dist, 500)
-            time.sleep(dist * 25)
+            self.logger.info("Wall is very far away, driving forwards into centre...")
+            self.robot.drive_dist_enc((dist / 2), 500)
+            time.sleep(dist * 12)
 
         # Lift the ball.
         self.robot.lift("up")

@@ -349,7 +349,7 @@ class Follow:
     KP = 11.0  # PID proportional gain (turn per degree of angle)
     KI = 0.0
     KD = 0.08
-    TURN_SLOWDOWN_FACTOR = 2  # larger = slows down more in tight turns
+    TURN_SLOWDOWN_FACTOR = 2.2  # larger = slows down more in tight turns
     SPIN_IN_PLACE_STRENGTH = 0.7  # turn_strength above this -> velocity 0 (spin on the spot)
 
     # ---- [TUNE] No-line behaviour ------------------------------------
@@ -397,7 +397,7 @@ class Follow:
     RED_V_MIN = 63
 
     # ---- Tower -------------------------------------------------------
-    TOWER_LINE_PIXELS = 2000  # dark pixels needed for lineInFrame()
+    TOWER_LINE_PIXELS = 3000  # dark pixels needed for lineInFrame()
 
     # ==================================================================
     #                    END OF TUNABLE PARAMETERS
@@ -976,7 +976,7 @@ class Follow:
                         debug_frame,
                     )
 
-                if local_gap_result is not None:
+                if local_gap_result is not None and start_contour:
                     gap_anchor, end_point, gap_angle_radians, gap_rect_center = local_gap_result
                     found_contour = self._search_contour_in_direction(
                         [c for c in blk_contours_filtered if c is not line_contour_raw],
@@ -1065,7 +1065,7 @@ class Follow:
                         )
 
             if line_state is LineState.GAP_WITH_LINE and not gap_with_line_rect_angle_valid:
-                angle = 0.0
+                angle = 0
             else:
                 angle = self._calculate_angle(
                     end_point,
@@ -2067,9 +2067,14 @@ class Follow:
                 # all of them give a steering angle pointing at the next piece of line.
                 self.no_line_frames = 0
 
+                if state == LineState.INTERSECTION_GREEN:
+                    angle = result.angle * 1.6
+                else:
+                    angle = result.angle
+
                 target_angle = float(
                     np.clip(
-                        math.degrees(result.angle),
+                        math.degrees(angle),
                         -self.MAX_TARGET_ANGLE,
                         self.MAX_TARGET_ANGLE,
                     )
