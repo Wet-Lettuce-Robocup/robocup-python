@@ -269,7 +269,7 @@ class Rescue:
         self.logger.info(f"Claw distance before grab: {claw_distance}mm")
 
         if claw_distance > -1 and claw_distance < 100:
-            self.robot.drive_dist_enc(claw_distance + 5, 250)
+            self.robot.drive_dist_enc(claw_distance + 10, 250)
         else:
             self.robot.drive_dist_enc(65, velocity=250)
         time.sleep(1.5)
@@ -292,8 +292,13 @@ class Rescue:
         self.tray_handler("grab", colour)
 
         # Reverse away from the ball.
-        self.robot.drive_dist_enc(-150, 400)
-        time.sleep(2)
+        dist = self.robot.get_front_distance()
+        if dist > 0 and dist < 150:
+            self.robot.drive_dist_enc(-150, 400)
+            time.sleep(2)
+        elif dist > 500 and dist < 800:
+            self.robot.drive_dist_enc(dist, 500)
+            time.sleep(dist * 25)
 
         # Lift the ball.
         self.robot.lift("up")
@@ -520,7 +525,15 @@ class Rescue:
                 if self.target_ball["dist"] < 0.15:
                     self.robot.drive_dist_enc(-150)
                     time.sleep(2)
-                    self._transition_to(Task.SCAN)
+                    positions = self.scan_for_balls()
+
+                    if not positions:
+                        self.logger.warning("Ball lost during approach")
+                        self.target_ball = None
+                        self._transition_to(Task.SCAN)
+                        return
+
+                    self.target_ball = positions[0]
 
                 self.logger.info(f"Rotating to {self.target_ball['cls']} ball")
 

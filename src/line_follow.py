@@ -27,12 +27,13 @@ class LineState(Enum):
     GAP = 6
     GAP_WITH_LINE = 7
     GAP_END = 8
-    U_TURN = 9            # green markers on both sides (original green U-turn detection)
+    U_TURN = 9  # green markers on both sides (original green U-turn detection)
 
 
 @dataclass
 class LineModeConfig:
     """Per-call switches for the line processor (same fields as center_processor)."""
+
     generate_debug_frame: bool = False
     calculate_green_center: bool = False
     gap_crop_enabled: bool = True
@@ -60,7 +61,7 @@ class LineFollowResult:
     p_in: Optional[Tuple[float, float]] = None
     p_out: Optional[Tuple[float, float]] = None
     p_green: Optional[Tuple[float, float]] = None
-    horizontal_crossing: bool = False   # original crossing detector (flag only)
+    horizontal_crossing: bool = False  # original crossing detector (flag only)
     time_stamp: float = 0.0
     debug_frame: Optional[np.ndarray] = field(default=None, repr=False)
 
@@ -72,11 +73,15 @@ class LineFollowResult:
 # If you have the original util module, swap these for the originals.
 # ======================================================================
 
+
 def adaptive_threshold(gray, block_size, c, invert=True):
     return cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
         cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY,
-        block_size, c,
+        block_size,
+        c,
     )
 
 
@@ -202,7 +207,9 @@ def is_point_in_image(point, image):
 
 def is_point_near_border(point, image, margin):
     h, w = image.shape[:2]
-    return point[0] < margin or point[0] >= w - margin or point[1] < margin or point[1] >= h - margin
+    return (
+        point[0] < margin or point[0] >= w - margin or point[1] < margin or point[1] >= h - margin
+    )
 
 
 def get_angle_between_points(p1, p2):
@@ -248,99 +255,123 @@ class Follow:
     # DownCamera captures 240x135 and crops [17:117, 20:220] -> 200x100. That is already small
     # (20k pixels), so frames are NOT downscaled further: halving would shrink the line to ~11 px
     # and force re-scaling every kernel/iteration count for almost no speed gain.
-    WIDTH = 200                         # expected frame width (frames are resized to this)
-    HEIGHT = 100                        # expected frame height
+    WIDTH = 200  # expected frame width (frames are resized to this)
+    HEIGHT = 100  # expected frame height
 
     # ---- [TUNE] Line size at 200x100 ----------------------------------
     # ESTIMATE from the previous code (green squares >= 3000 px^2 => ~55 px sides, crossing edge run
     # <= 25 px): the black line is ~22 px wide, green markers ~2.5x that. Enable debug and read the
     # "Measured line width" log, then set this to the measured value. The size-dependent values
     # below (AREA_MIN_*, EXPAND_*, GAP_START_LOCAL_MIN_PIXELS) follow it automatically.
-    LINE_WIDTH_PX = 33                  # measured from a real snapshot: 32-35 px wide, top bar 29-35 px thick
+    LINE_WIDTH_PX = 33  # measured from a real snapshot: 32-35 px wide, top bar 29-35 px thick
 
     # ---- [TUNE] Black line thresholding -------------------------------
     # "fixed"    = previous version's method: pixel is black if gray < BLACK_THRESH_FIXED (default, worked on this camera)
     # "adaptive" = center_processor's method: black if darker than local mean by ADAPTIVE_THRESHOLD_C
     BLACK_THRESHOLD_MODE = "fixed"
-    BLACK_THRESH_FIXED = 100            # fixed mode: gray (0-255) below this = black. Snapshot: line 65-88, white 200+, so ~100
-                                        #   Raise if the line is missed (dim light / grey tape), lower if shadows appear
-    BLUR_GRAYSCALE = 7                  # box blur on gray image. Higher = smoother, loses thin lines
-    BLUR_HSV = 5                        # box blur before HSV (green/red masks)
-    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101 # (adaptive mode only) must be odd. ~ image height, so the threshold is close to global. Higher = more global
-    ADAPTIVE_THRESHOLD_C = 60           # (adaptive mode only) pixel counts as black if this much darker than the local mean.
-                                        #   With ~10-30% black in frame the cut-off lands at gray ~80-125.
-                                        #   Higher = stricter (only very dark), lower = picks up grey/shadows
+    BLACK_THRESH_FIXED = 100  # fixed mode: gray (0-255) below this = black. Snapshot: line 65-88, white 200+, so ~100
+    #   Raise if the line is missed (dim light / grey tape), lower if shadows appear
+    BLUR_GRAYSCALE = 7  # box blur on gray image. Higher = smoother, loses thin lines
+    BLUR_HSV = 5  # box blur before HSV (green/red masks)
+    ADAPTIVE_THRESHOLD_BLOCK_SIZE = 101  # (adaptive mode only) must be odd. ~ image height, so the threshold is close to global. Higher = more global
+    ADAPTIVE_THRESHOLD_C = (
+        60  # (adaptive mode only) pixel counts as black if this much darker than the local mean.
+    )
+    #   With ~10-30% black in frame the cut-off lands at gray ~80-125.
+    #   Higher = stricter (only very dark), lower = picks up grey/shadows
 
     # ---- [TUNE] Morphology (clean-up of masks) -----------------------
-    MORPHOLOGY_KERNEL_SIZE = 5          # round kernel for black/red
-    MORPHOLOGY_KERNEL_SIZE_SMALL = 3    # round kernel for green erode
-    MORPHOLOGY_ITERATIONS_BLACK_ERODE_1 = 1   # removes speckle
-    MORPHOLOGY_ITERATIONS_BLACK_DILATE = 6    # bridges small breaks (large = merges nearby lines)
-    MORPHOLOGY_ITERATIONS_BLACK_ERODE_2 = 5   # shrinks back (dilate-erode difference = net growth)
+    MORPHOLOGY_KERNEL_SIZE = 5  # round kernel for black/red
+    MORPHOLOGY_KERNEL_SIZE_SMALL = 3  # round kernel for green erode
+    MORPHOLOGY_ITERATIONS_BLACK_ERODE_1 = 1  # removes speckle
+    MORPHOLOGY_ITERATIONS_BLACK_DILATE = 6  # bridges small breaks (large = merges nearby lines)
+    MORPHOLOGY_ITERATIONS_BLACK_ERODE_2 = 5  # shrinks back (dilate-erode difference = net growth)
     MORPHOLOGY_ITERATIONS_GREEN_ERODE_1 = 1
     MORPHOLOGY_ITERATIONS_GREEN_DILATE = 2
     MORPHOLOGY_ITERATIONS_GREEN_ERODE_2 = 3
     # ---- [TUNE] Minimum blob sizes (pixels^2) ------------------------
-    AREA_MIN_BLACK = int(LINE_WIDTH_PX * 25)   # = 550. Black blobs smaller than ~25 px of line are ignored (noise).
-                                               #   Also the shortest line stub still seen after a gap.
-    AREA_MIN_GREEN = int(0.04 * (2.5 * LINE_WIDTH_PX) ** 2)  # = 272. ~4% of a full marker (after morphology), so a marker that is
-                                                             #   mostly out of frame (strip ~55x19 px = 430 px^2) still counts.
-                                                             #   Raise if specks/reflections are mistaken for markers.
-    AREA_MIN_WHITE = 100                # white holes smaller than this inside the line are filled (~10x10 px)
+    AREA_MIN_BLACK = int(
+        LINE_WIDTH_PX * 25
+    )  # = 550. Black blobs smaller than ~25 px of line are ignored (noise).
+    #   Also the shortest line stub still seen after a gap.
+    AREA_MIN_GREEN = int(
+        0.04 * (2.5 * LINE_WIDTH_PX) ** 2
+    )  # = 272. ~4% of a full marker (after morphology), so a marker that is
+    #   mostly out of frame (strip ~55x19 px = 430 px^2) still counts.
+    #   Raise if specks/reflections are mistaken for markers.
+    AREA_MIN_WHITE = 100  # white holes smaller than this inside the line are filled (~10x10 px)
 
     # ---- [TUNE] Intersections & green markers ------------------------
-    EXPAND_EDGES = int(LINE_WIDTH_PX * 0.25)        # = 5. Half a line width would reach across the line; keep it smaller.
+    EXPAND_EDGES = int(
+        LINE_WIDTH_PX * 0.25
+    )  # = 5. Half a line width would reach across the line; keep it smaller.
     # px growth of line-exit blobs when checking touching white regions
-    EXPAND_WHITE_INTERSECTION = int(LINE_WIDTH_PX * 2)  # = 44. px growth of white regions to find the intersection centre
-    GREEN_DOMINANCE_RATIO = 2.0         # if two markers are both relevant, the larger one wins when it is at least this many times
-                                        #   bigger than the other (a marker just entering the frame edge mid-turn is small).
-                                        #   Lower = decides more often, higher = more cautious. (Two full markers are the U-turn check's job.)
-    GREEN_IGNORE_BORDER_TOUCHING = False  # True = ignore markers cut off by the image edge (center_processor default).
-                                          #   False = use them; needed when the camera is close and markers are partly out of frame
-    GREEN_TRACKING_DISTANCE = 15        # px: same green marker between frames if closer than this
-    GREEN_IGNORE_THRESHOLD = 100        # frames a non-relevant green marker is tracked before being ignored
+    EXPAND_WHITE_INTERSECTION = int(
+        LINE_WIDTH_PX * 2
+    )  # = 44. px growth of white regions to find the intersection centre
+    GREEN_DOMINANCE_RATIO = 2.0  # if two markers are both relevant, the larger one wins when it is at least this many times
+    #   bigger than the other (a marker just entering the frame edge mid-turn is small).
+    #   Lower = decides more often, higher = more cautious. (Two full markers are the U-turn check's job.)
+    GREEN_IGNORE_BORDER_TOUCHING = (
+        False  # True = ignore markers cut off by the image edge (center_processor default).
+    )
+    #   False = use them; needed when the camera is close and markers are partly out of frame
+    GREEN_TRACKING_DISTANCE = 15  # px: same green marker between frames if closer than this
+    GREEN_IGNORE_THRESHOLD = (
+        100  # frames a non-relevant green marker is tracked before being ignored
+    )
 
     # ---- [TUNE] Gaps -------------------------------------------------
-    GAP_CONTOUR_MIN_ASPECT_RATIO = 1.5      # remaining blob must be this elongated to count as a line piece
-    GAP_CONTOUR_MIN_RELATIVE_SIZE = 0.12    # ... and at least this fraction of image height
-    GAP_HORIZONTAL_CROP = True              # while in/after a gap only look at the centre columns
-    GAP_RELATIVE_CROP_X = 0.2               # fraction cropped from left AND right during a gap
-    GAP_WITH_LINE_TARGET_RELATIVE_OFFSET = 1  # how far ahead (x image height) the gap target is placed
-    GAP_START_LOCAL_RADIUS_RELATIVE = 0.4   # radius (x image height) of the circle fitted at the line end
-    GAP_START_LOCAL_MIN_PIXELS = int(LINE_WIDTH_PX * 5)  # = 110. min line pixels inside that circle
+    GAP_CONTOUR_MIN_ASPECT_RATIO = (
+        1.5  # remaining blob must be this elongated to count as a line piece
+    )
+    GAP_CONTOUR_MIN_RELATIVE_SIZE = 0.12  # ... and at least this fraction of image height
+    GAP_HORIZONTAL_CROP = True  # while in/after a gap only look at the centre columns
+    GAP_RELATIVE_CROP_X = 0.2  # fraction cropped from left AND right during a gap
+    GAP_WITH_LINE_TARGET_RELATIVE_OFFSET = (
+        1  # how far ahead (x image height) the gap target is placed
+    )
+    GAP_START_LOCAL_RADIUS_RELATIVE = (
+        0.4  # radius (x image height) of the circle fitted at the line end
+    )
+    GAP_START_LOCAL_MIN_PIXELS = int(
+        LINE_WIDTH_PX * 5
+    )  # = 110. min line pixels inside that circle
     GAP_START_LOCAL_MIN_RECT_BLACK_RATIO = 0.7  # min fill of the fitted rectangle
     GAP_START_LOCAL_RECT_BORDER_MARGIN = 2  # rectangle touching the border within this = rejected
-    GAP_SEARCH_ANGLE_TOLERANCE_DEG = 30     # cone used to look for the line continuing after a gap
-    GAP_SEARCH_ITERATIONS = 5               # how many times the gap search may jump to a new contour
+    GAP_SEARCH_ANGLE_TOLERANCE_DEG = 30  # cone used to look for the line continuing after a gap
+    GAP_SEARCH_ITERATIONS = 5  # how many times the gap search may jump to a new contour
 
     # ---- [TUNE] Driving / steering -----------------------------------
-    VELOCITY = 380                      # base forward speed
-    MAX_TARGET_ANGLE = 90.0             # steering angle (deg) is clipped to +-this before the PID
-    MAX_TURN = 600                      # max turn command sent to drive_PID
-    KP = 17.0                           # PID proportional gain (turn per degree of angle)
+    VELOCITY = 380  # base forward speed
+    MAX_TARGET_ANGLE = 90.0  # steering angle (deg) is clipped to +-this before the PID
+    MAX_TURN = 600  # max turn command sent to drive_PID
+    KP = 11.0  # PID proportional gain (turn per degree of angle)
     KI = 0.0
-    KD = 0.1
-    TURN_SLOWDOWN_FACTOR = 2            # larger = slows down more in tight turns
-    SPIN_IN_PLACE_STRENGTH = 0.7        # turn_strength above this -> velocity 0 (spin on the spot)
+    KD = 0.08
+    TURN_SLOWDOWN_FACTOR = 2  # larger = slows down more in tight turns
+    SPIN_IN_PLACE_STRENGTH = 0.7  # turn_strength above this -> velocity 0 (spin on the spot)
 
     # ---- [TUNE] No-line behaviour ------------------------------------
-    NO_LINE_FORWARD_FRAMES = 15         # frames of NO_LINE driven slowly forward before reversing (old GAP_LIMIT).
-                                        #   Camera runs at 20 fps; this counts main-loop iterations, so raise it if your
-                                        #   loop is faster than the camera and gaps get abandoned too early.
-    NO_LINE_FORWARD_SPEED_SCALE = 0.5   # fraction of VELOCITY used while creeping forward
-    REVERSE_SPEED = -200                # speed used while reversing
+    NO_LINE_FORWARD_FRAMES = (
+        15  # frames of NO_LINE driven slowly forward before reversing (old GAP_LIMIT).
+    )
+    #   Camera runs at 20 fps; this counts main-loop iterations, so raise it if your
+    #   loop is faster than the camera and gaps get abandoned too early.
+    NO_LINE_FORWARD_SPEED_SCALE = 0.5  # fraction of VELOCITY used while creeping forward
+    REVERSE_SPEED = -200  # speed used while reversing
 
     # ---- [TUNE] Original black mask (used for crossing + green U-turn geometry, and red removal)
     BLUR_SIZE = 9
     MORPH_CLOSE_SIZE = 7
     MORPH_OPEN_SIZE = 3
-    BLACK_THRESH = 100                  # gray < this = black (only for crossing / U-turn geometry). Keep equal to BLACK_THRESH_FIXED
-    REMOVE_RED_FROM_BLACK = True        # original silver fix: red pixels are removed from the black mask
+    BLACK_THRESH = 100  # gray < this = black (only for crossing / U-turn geometry). Keep equal to BLACK_THRESH_FIXED
+    REMOVE_RED_FROM_BLACK = True  # original silver fix: red pixels are removed from the black mask
 
     # ---- [TUNE] Horizontal crossing detection (original, flag only) ---
     CROSSING_SIDE_Y_TOLERANCE = 8
     CROSSING_MIN_EDGE_RUN = 3
-    CROSSING_MAX_EDGE_RUN = 45          # must exceed the line width (~33 px), more for angled lines
+    CROSSING_MAX_EDGE_RUN = 45  # must exceed the line width (~33 px), more for angled lines
     CROSSING_TOP_X_TOLERANCE = 45
 
     # ---- [TUNE] Green U-turn detection (original) ----------------------
@@ -353,12 +384,12 @@ class Follow:
     GREEN_V_LOW = 40
     # Same HSV range is now used for the intersection green markers too (these values worked on this camera)
     THRESHOLD_GREEN = ((GREEN_H_LOW, GREEN_S_LOW, GREEN_V_LOW), (GREEN_H_HIGH, 255, 255))
-    GREEN_MIN_AREA = 3000               # green square area limits (px^2) for the U-turn check. ~(2.5 x LINE_WIDTH_PX)^2 = 3025
+    GREEN_MIN_AREA = 3000  # green square area limits (px^2) for the U-turn check. ~(2.5 x LINE_WIDTH_PX)^2 = 3025
     GREEN_MAX_AREA = 15000
-    GREEN_PIXEL_THRESHOLD = 400         # cheap pre-check before the full green search
+    GREEN_PIXEL_THRESHOLD = 400  # cheap pre-check before the full green search
     GREEN_HSV_DOWNSAMPLE = 2
-    U_TURN_COOLDOWN = 3.0               # seconds after a U-turn during which another is ignored
-    U_TURN_SETTLE_TIME = 5              # seconds to wait for spin_enc to finish
+    U_TURN_COOLDOWN = 3.0  # seconds after a U-turn during which another is ignored
+    U_TURN_SETTLE_TIME = 5  # seconds to wait for spin_enc to finish
 
     # ---- [TUNE] Rescue (red) detection (original) ----------------------
     MIN_RED = 600  # red pixels / contour area that trigger EXIT
@@ -413,16 +444,23 @@ class Follow:
         self.debug_frame = None
 
         # Original kernels (black mask for crossing / U-turn, green, red)
-        self.black_close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.MORPH_CLOSE_SIZE, self.MORPH_CLOSE_SIZE))
-        self.black_open_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.MORPH_OPEN_SIZE, self.MORPH_OPEN_SIZE))
+        self.black_close_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (self.MORPH_CLOSE_SIZE, self.MORPH_CLOSE_SIZE)
+        )
+        self.black_open_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (self.MORPH_OPEN_SIZE, self.MORPH_OPEN_SIZE)
+        )
         self.green_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         self.red_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
         # Morphology kernels
         self.MORPHOLOGY_KERNEL_ROUND = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.MORPHOLOGY_KERNEL_SIZE, self.MORPHOLOGY_KERNEL_SIZE))
+            cv2.MORPH_ELLIPSE, (self.MORPHOLOGY_KERNEL_SIZE, self.MORPHOLOGY_KERNEL_SIZE)
+        )
         self.MORPHOLOGY_KERNEL_ROUND_SMALL = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.MORPHOLOGY_KERNEL_SIZE_SMALL, self.MORPHOLOGY_KERNEL_SIZE_SMALL))
+            cv2.MORPH_ELLIPSE,
+            (self.MORPHOLOGY_KERNEL_SIZE_SMALL, self.MORPHOLOGY_KERNEL_SIZE_SMALL),
+        )
 
     def reset(self):
         self.follow_status = Task.INIT
@@ -472,7 +510,9 @@ class Follow:
         if self._green_present(frame):
             geometry = self._detect_junction_geometry(orig_black_mask)
             green_info = self._detect_green_squares(
-                frame, geometry["horizontal_y"], geometry["vertical_x"],
+                frame,
+                geometry["horizontal_y"],
+                geometry["vertical_x"],
                 green_mask=self._get_green_mask(frame, downsample=False),
             )
             if (
@@ -494,7 +534,15 @@ class Follow:
         result = self._follow_line(frame, config)
         result.horizontal_crossing = crossing["detected"]
         if debug and result.debug_frame is not None and crossing["detected"]:
-            cv2.putText(result.debug_frame, "CROSS", (0, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 255, 255), 1)
+            cv2.putText(
+                result.debug_frame,
+                "CROSS",
+                (0, 60),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.25,
+                (0, 255, 255),
+                1,
+            )
             if crossing["crossing_y"] is not None:
                 y = int(crossing["crossing_y"])
                 cv2.line(result.debug_frame, (0, y), (self.WIDTH - 1, y), (0, 255, 255), 1)
@@ -516,7 +564,7 @@ class Follow:
         p_in = None
         p_out = None
 
-        intersection_center_relative_border = .4
+        intersection_center_relative_border = 0.4
 
         grayscale_frame, hsv_frame = self._preprocess_frame(frame)
         blk_binary, grn_binary = self._generate_binaries(grayscale_frame, hsv_frame)
@@ -533,7 +581,8 @@ class Follow:
             self.MORPHOLOGY_ITERATIONS_GREEN_ERODE_2,
             self.MORPHOLOGY_KERNEL_ROUND_SMALL,
             self.MORPHOLOGY_KERNEL_ROUND,
-            self.MORPHOLOGY_KERNEL_ROUND)
+            self.MORPHOLOGY_KERNEL_ROUND,
+        )
         blk_binary = subtract_binaries(blk_binary, grn_morphed)  # subtract green from black
         blk_morphed = morph_transform_image(
             blk_binary,
@@ -542,7 +591,8 @@ class Follow:
             self.MORPHOLOGY_ITERATIONS_BLACK_ERODE_2,
             self.MORPHOLOGY_KERNEL_ROUND,
             self.MORPHOLOGY_KERNEL_ROUND,
-            self.MORPHOLOGY_KERNEL_ROUND)
+            self.MORPHOLOGY_KERNEL_ROUND,
+        )
 
         blk_contours_raw = find_contours(blk_morphed)
         grn_contours_raw = find_contours(grn_morphed)
@@ -556,24 +606,68 @@ class Follow:
                 p_green = self._normalize_point(green_center, image_width, image_height)
                 if debug_frame is not None:
                     cv2.circle(debug_frame, green_center, 3, (0, 255, 255), -1)
-                    cv2.putText(debug_frame, "G", green_center, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1)
+                    cv2.putText(
+                        debug_frame,
+                        "G",
+                        green_center,
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.3,
+                        (0, 255, 255),
+                        1,
+                    )
 
         if debug_frame is not None:
             self._draw_subtle_default_points(debug_frame, default_start_point, default_end_point)
 
-        if config.gap_crop_enabled and (self.GAP_HORIZONTAL_CROP and ((self._last_line_state in (LineState.GAP_START, LineState.GAP, LineState.GAP_WITH_LINE)) or self._came_from_gap)):
-            blk_contours_filtered = filter_contours_by_relative_area(blk_contours_filtered, grayscale_frame, self.GAP_RELATIVE_CROP_X, 1 - self.GAP_RELATIVE_CROP_X, 0, 1)
+        if config.gap_crop_enabled and (
+            self.GAP_HORIZONTAL_CROP
+            and (
+                (
+                    self._last_line_state
+                    in (LineState.GAP_START, LineState.GAP, LineState.GAP_WITH_LINE)
+                )
+                or self._came_from_gap
+            )
+        ):
+            blk_contours_filtered = filter_contours_by_relative_area(
+                blk_contours_filtered,
+                grayscale_frame,
+                self.GAP_RELATIVE_CROP_X,
+                1 - self.GAP_RELATIVE_CROP_X,
+                0,
+                1,
+            )
 
         if not blk_contours_filtered:
             self._last_line_contour = None
             line_state = LineState.NO_LINE
             if not self._came_from_gap:
-                self._came_from_gap = bool(self._last_line_state in (LineState.GAP_START, LineState.GAP_WITH_LINE))
+                self._came_from_gap = bool(
+                    self._last_line_state in (LineState.GAP_START, LineState.GAP_WITH_LINE)
+                )
             self._last_line_state = line_state
             if debug_frame is not None:
-                cv2.putText(debug_frame, line_state.name, (0, 7), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
-                cv2.putText(debug_frame, f"{round((time.perf_counter() - time_reference) * 1000, 1)}ms", (0, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
-            result = LineFollowResult(state=line_state, p_green=p_green, time_stamp=time.time(), debug_frame=debug_frame)
+                cv2.putText(
+                    debug_frame,
+                    line_state.name,
+                    (0, 7),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
+                cv2.putText(
+                    debug_frame,
+                    f"{round((time.perf_counter() - time_reference) * 1000, 1)}ms",
+                    (0, 43),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
+            result = LineFollowResult(
+                state=line_state, p_green=p_green, time_stamp=time.time(), debug_frame=debug_frame
+            )
             self.last_result = result
             return result
         else:
@@ -588,8 +682,12 @@ class Follow:
 
             wht_binary = cv2.bitwise_not(line_binary_raw)
             wht_contours_raw = find_contours(wht_binary)
-            wht_contours_filtered, wht_contours_too_small = filter_contours_by_area(wht_contours_raw, self.AREA_MIN_WHITE)
-            cv2.drawContours(line_binary_raw, wht_contours_too_small, -1, 255, thickness=cv2.FILLED)
+            wht_contours_filtered, wht_contours_too_small = filter_contours_by_area(
+                wht_contours_raw, self.AREA_MIN_WHITE
+            )
+            cv2.drawContours(
+                line_binary_raw, wht_contours_too_small, -1, 255, thickness=cv2.FILLED
+            )
 
             if debug_frame is not None:
                 self._debug_draw_contours(debug_frame, find_contours(line_binary_raw), (255, 0, 0))
@@ -605,7 +703,14 @@ class Follow:
             start_contour, end_contour = None, None
 
             if edge_contours:
-                grn_contours = [ContourHandler(c, grayscale_frame) for c in grn_contours_filtered if not (self.GREEN_IGNORE_BORDER_TOUCHING and contour_touches_border(grayscale_frame, c))]
+                grn_contours = [
+                    ContourHandler(c, grayscale_frame)
+                    for c in grn_contours_filtered
+                    if not (
+                        self.GREEN_IGNORE_BORDER_TOUCHING
+                        and contour_touches_border(grayscale_frame, c)
+                    )
+                ]
                 self._update_green_marker_memory(grn_contours, debug_frame=debug_frame)
 
                 last_start = self._last_start_point
@@ -625,50 +730,99 @@ class Follow:
                         cv2.circle(debug_frame, start_contour.center, 4, (255, 0, 0), -1)
 
                     p_in = self._normalize_point(start_contour.center, image_width, image_height)
-                    start_angle = self._calculate_angle(start_contour.center, (int(image_width * config.angle_calculation_center_x), int(image_height * config.angle_calculation_center_y)))
+                    start_angle = self._calculate_angle(
+                        start_contour.center,
+                        (
+                            int(image_width * config.angle_calculation_center_x),
+                            int(image_height * config.angle_calculation_center_y),
+                        ),
+                    )
 
                 if end_contour:
                     if start_contour:
                         if len(edge_contours) > 2:
-                            wht_contours = [ContourHandler(c, grayscale_frame) for c in wht_contours_filtered]
+                            wht_contours = [
+                                ContourHandler(c, grayscale_frame) for c in wht_contours_filtered
+                            ]
 
                             for c in edge_contours:
                                 c.scale_binary(self.EXPAND_EDGES)
 
                             intersection_with_green = False
                             if len(grn_contours) and not config.ignore_intersections_with_green:
-                                adjacent_wht_countours = [c for c in wht_contours if check_overlap_binaries([start_contour.scaled_binary, c.binary])]
+                                adjacent_wht_countours = [
+                                    c
+                                    for c in wht_contours
+                                    if check_overlap_binaries([
+                                        start_contour.scaled_binary,
+                                        c.binary,
+                                    ])
+                                ]
 
                                 white_contours_with_green = 0
                                 green_exit_by_center = {}
-                                green_relevance_by_center = {grn_contour.center: False for grn_contour in grn_contours}
+                                green_relevance_by_center = {
+                                    grn_contour.center: False for grn_contour in grn_contours
+                                }
                                 for adjacent_wht_countour in adjacent_wht_countours:
                                     if debug_frame is not None:
-                                        cv2.drawContours(debug_frame, [adjacent_wht_countour.contour], -1, (255, 0, 255), thickness=1)
+                                        cv2.drawContours(
+                                            debug_frame,
+                                            [adjacent_wht_countour.contour],
+                                            -1,
+                                            (255, 0, 255),
+                                            thickness=1,
+                                        )
 
                                     white_has_relevant_green = False
                                     for grn_contour in grn_contours:
-                                        if check_overlap_contours([grn_contour, adjacent_wht_countour]) and not self._check_green_ignore_from_memory(grn_contour.center):
+                                        if check_overlap_contours([
+                                            grn_contour,
+                                            adjacent_wht_countour,
+                                        ]) and not self._check_green_ignore_from_memory(
+                                            grn_contour.center
+                                        ):
                                             for edge_contour in edge_contours:
-                                                if edge_contour is not start_contour and check_overlap_binaries([edge_contour.scaled_binary, adjacent_wht_countour.binary]):
+                                                if (
+                                                    edge_contour is not start_contour
+                                                    and check_overlap_binaries([
+                                                        edge_contour.scaled_binary,
+                                                        adjacent_wht_countour.binary,
+                                                    ])
+                                                ):
                                                     end_contour = edge_contour
                                                     white_has_relevant_green = True
-                                                    green_relevance_by_center[grn_contour.center] = True
-                                                    green_exit_by_center[grn_contour.center] = (grn_contour.area, edge_contour)
+                                                    green_relevance_by_center[
+                                                        grn_contour.center
+                                                    ] = True
+                                                    green_exit_by_center[grn_contour.center] = (
+                                                        grn_contour.area,
+                                                        edge_contour,
+                                                    )
 
                                                     if debug_frame is not None:
-                                                        cv2.drawContours(debug_frame, [adjacent_wht_countour.contour], -1, (0, 255, 0), thickness=2)
+                                                        cv2.drawContours(
+                                                            debug_frame,
+                                                            [adjacent_wht_countour.contour],
+                                                            -1,
+                                                            (0, 255, 0),
+                                                            thickness=2,
+                                                        )
                                                     break
 
                                     if white_has_relevant_green:
                                         white_contours_with_green += 1
 
                                 for grn_contour in grn_contours:
-                                    is_relevant = green_relevance_by_center.get(grn_contour.center, False)
+                                    is_relevant = green_relevance_by_center.get(
+                                        grn_contour.center, False
+                                    )
                                     if is_relevant:
                                         self._reset_green_marker_ignore_count(grn_contour.center)
                                     else:
-                                        self._increment_green_marker_ignore_count(grn_contour.center)
+                                        self._increment_green_marker_ignore_count(
+                                            grn_contour.center
+                                        )
 
                                     if debug_frame is not None:
                                         cv2.drawContours(
@@ -678,7 +832,9 @@ class Follow:
                                             (0, 255, 255) if is_relevant else (0, 0, 255),
                                             thickness=2,
                                         )
-                                        ignore_count = self._green_markers_memory.get(grn_contour.center, 0)
+                                        ignore_count = self._green_markers_memory.get(
+                                            grn_contour.center, 0
+                                        )
                                         self._draw_debug_text_on_top(
                                             debug_frame,
                                             str(ignore_count),
@@ -689,9 +845,16 @@ class Follow:
                                 if white_contours_with_green == 1:
                                     line_state = LineState.INTERSECTION_GREEN
                                     intersection_with_green = True
-                                elif white_contours_with_green >= 2 and len(green_exit_by_center) >= 2:
+                                elif (
+                                    white_contours_with_green >= 2
+                                    and len(green_exit_by_center) >= 2
+                                ):
                                     # Two markers seen. Take the clearly larger one (see GREEN_DOMINANCE_RATIO)
-                                    ranked = sorted(green_exit_by_center.values(), key=lambda t: t[0], reverse=True)
+                                    ranked = sorted(
+                                        green_exit_by_center.values(),
+                                        key=lambda t: t[0],
+                                        reverse=True,
+                                    )
                                     if ranked[0][0] >= self.GREEN_DOMINANCE_RATIO * ranked[1][0]:
                                         end_contour = ranked[0][1]
                                         line_state = LineState.INTERSECTION_GREEN
@@ -709,33 +872,76 @@ class Follow:
                                     intersection_contours_raw = []
                                     if expanded_binaries:
                                         intersection_binary = overlap_binaries(expanded_binaries)
-                                        intersection_contours_raw = find_contours(intersection_binary)
+                                        intersection_contours_raw = find_contours(
+                                            intersection_binary
+                                        )
 
                                     found_intersection_center = False
                                     if intersection_contours_raw:
-                                        intersection_contour = ContourHandler(intersection_contours_raw[0], grayscale_frame)
+                                        intersection_contour = ContourHandler(
+                                            intersection_contours_raw[0], grayscale_frame
+                                        )
 
-                                        if not is_point_near_border(intersection_contour.center, grayscale_frame, int(image_height * intersection_center_relative_border)):
+                                        if not is_point_near_border(
+                                            intersection_contour.center,
+                                            grayscale_frame,
+                                            int(
+                                                image_height * intersection_center_relative_border
+                                            ),
+                                        ):
                                             intersection_center = intersection_contour.center
                                             found_intersection_center = True
 
                                         if debug_frame is not None:
-                                            cv2.drawContours(debug_frame, intersection_contours_raw, -1, (0, 255, 0) if found_intersection_center else (255, 0, 0), thickness=2)
-                                            cv2.circle(debug_frame, intersection_contour.center, 5, (255, 255, 0) if found_intersection_center else (255, 0, 255), -1)
+                                            cv2.drawContours(
+                                                debug_frame,
+                                                intersection_contours_raw,
+                                                -1,
+                                                (0, 255, 0)
+                                                if found_intersection_center
+                                                else (255, 0, 0),
+                                                thickness=2,
+                                            )
+                                            cv2.circle(
+                                                debug_frame,
+                                                intersection_contour.center,
+                                                5,
+                                                (255, 255, 0)
+                                                if found_intersection_center
+                                                else (255, 0, 255),
+                                                -1,
+                                            )
 
-                                    theoratical_point = find_border_intersection(grayscale_frame, start_contour.center, intersection_center)
+                                    theoratical_point = find_border_intersection(
+                                        grayscale_frame, start_contour.center, intersection_center
+                                    )
                                     if not found_intersection_center:
                                         if theoratical_point[1] > image_height / 2:
                                             if debug_frame is not None:
-                                                cv2.circle(debug_frame, theoratical_point, 7, (0, 128, 255), -1)
+                                                cv2.circle(
+                                                    debug_frame,
+                                                    theoratical_point,
+                                                    7,
+                                                    (0, 128, 255),
+                                                    -1,
+                                                )
                                             theoratical_point = (image_width // 2, 0)
-                                    closest_contour = get_closest_contour_handler([c for c in edge_contours if c is not start_contour], theoratical_point, manhatten=False)
+                                    closest_contour = get_closest_contour_handler(
+                                        [c for c in edge_contours if c is not start_contour],
+                                        theoratical_point,
+                                        manhatten=False,
+                                    )
                                     end_contour = closest_contour
 
                                     if debug_frame is not None:
-                                        cv2.circle(debug_frame, theoratical_point, 3, (0, 255, 255), -1)
+                                        cv2.circle(
+                                            debug_frame, theoratical_point, 3, (0, 255, 255), -1
+                                        )
                                 else:
-                                    end_contour = get_closest_contour_handler([c for c in edge_contours if c is not start_contour], default_end_point)
+                                    end_contour = get_closest_contour_handler(
+                                        [c for c in edge_contours if c is not start_contour],
+                                        default_end_point,
+                                    )
                     else:
                         line_state = LineState.GAP_END
 
@@ -792,9 +998,17 @@ class Follow:
                     dx, dy = 0, 0
 
                     aspect_ratio = max(h / w, w / h) if w > 0.0 and h > 0.0 else 0.0
-                    if aspect_ratio < self.GAP_CONTOUR_MIN_ASPECT_RATIO or max(w, h) < (self.GAP_CONTOUR_MIN_RELATIVE_SIZE * image_height):
+                    if aspect_ratio < self.GAP_CONTOUR_MIN_ASPECT_RATIO or max(w, h) < (
+                        self.GAP_CONTOUR_MIN_RELATIVE_SIZE * image_height
+                    ):
                         if debug_frame is not None:
-                            cv2.drawContours(debug_frame, [np.int32(cv2.boxPoints(rect))], -1, (0, 0, 255), thickness=1)
+                            cv2.drawContours(
+                                debug_frame,
+                                [np.int32(cv2.boxPoints(rect))],
+                                -1,
+                                (0, 0, 255),
+                                thickness=1,
+                            )
 
                     else:
                         gap_with_line_rect_angle_valid = True
@@ -802,7 +1016,13 @@ class Follow:
                             box_angle_deg += 90
 
                         if debug_frame is not None:
-                            cv2.drawContours(debug_frame, [np.int32(cv2.boxPoints(rect))], -1, (0, 255, 0), thickness=1)
+                            cv2.drawContours(
+                                debug_frame,
+                                [np.int32(cv2.boxPoints(rect))],
+                                -1,
+                                (0, 255, 0),
+                                thickness=1,
+                            )
 
                         gap_angle_radians = math.radians(box_angle_deg)
 
@@ -818,8 +1038,14 @@ class Follow:
                             line_contour_raw = found_contour
                             continue
 
-                        dx = -int((image_height * self.GAP_WITH_LINE_TARGET_RELATIVE_OFFSET) * math.cos(math.radians(box_angle_deg)))
-                        dy = -int((image_height * self.GAP_WITH_LINE_TARGET_RELATIVE_OFFSET) * math.sin(math.radians(box_angle_deg)))
+                        dx = -int(
+                            (image_height * self.GAP_WITH_LINE_TARGET_RELATIVE_OFFSET)
+                            * math.cos(math.radians(box_angle_deg))
+                        )
+                        dy = -int(
+                            (image_height * self.GAP_WITH_LINE_TARGET_RELATIVE_OFFSET)
+                            * math.sin(math.radians(box_angle_deg))
+                        )
 
                     end_point = (int(x + dx), int(y + dy))
 
@@ -828,26 +1054,87 @@ class Follow:
                     end_point = (start_contour.center[0], start_contour.center[1] - image_height)
 
                     if debug_frame is not None:
-                        cv2.putText(debug_frame, "gap start local rect rejected", (0, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
+                        cv2.putText(
+                            debug_frame,
+                            "gap start local rect rejected",
+                            (0, 52),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.25,
+                            (0, 0, 255),
+                            1,
+                        )
 
             if line_state is LineState.GAP_WITH_LINE and not gap_with_line_rect_angle_valid:
                 angle = 0.0
             else:
-                angle = self._calculate_angle(end_point, (int(image_width * config.angle_calculation_center_x), int(image_height * config.angle_calculation_center_y)))
+                angle = self._calculate_angle(
+                    end_point,
+                    (
+                        int(image_width * config.angle_calculation_center_x),
+                        int(image_height * config.angle_calculation_center_y),
+                    ),
+                )
                 if line_state is LineState.GAP_WITH_LINE and abs(math.degrees(angle)) > 100.0:
                     angle = self._flip_angle_180_rad(angle)
             p_out = self._normalize_point(end_point, image_width, image_height)
 
             if debug_frame is not None:
-                line_start, line_end = clip_line(debug_frame, (int(image_width * config.angle_calculation_center_x), int(image_height * config.angle_calculation_center_y)), end_point)
+                line_start, line_end = clip_line(
+                    debug_frame,
+                    (
+                        int(image_width * config.angle_calculation_center_x),
+                        int(image_height * config.angle_calculation_center_y),
+                    ),
+                    end_point,
+                )
                 cv2.line(debug_frame, line_start, line_end, (0, 0, 255), thickness=1)
                 if is_point_in_image(end_point, debug_frame):
                     cv2.circle(debug_frame, end_point, 4, (0, 0, 255), -1)
-                cv2.putText(debug_frame, line_state.name, (0, 7), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
-                cv2.putText(debug_frame, f"{round(math.degrees(angle))}deg", (0, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
-                cv2.putText(debug_frame, f"b: {blk_pixel_count}px", (0, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
-                cv2.putText(debug_frame, f"e: {end_pixel_count}px", (0, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
-                cv2.putText(debug_frame, f"{round((time.perf_counter() - time_reference) * 1000, 1)}ms", (0, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0, 0, 255), 1)
+                cv2.putText(
+                    debug_frame,
+                    line_state.name,
+                    (0, 7),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
+                cv2.putText(
+                    debug_frame,
+                    f"{round(math.degrees(angle))}deg",
+                    (0, 16),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
+                cv2.putText(
+                    debug_frame,
+                    f"b: {blk_pixel_count}px",
+                    (0, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
+                cv2.putText(
+                    debug_frame,
+                    f"e: {end_pixel_count}px",
+                    (0, 34),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
+                cv2.putText(
+                    debug_frame,
+                    f"{round((time.perf_counter() - time_reference) * 1000, 1)}ms",
+                    (0, 43),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.25,
+                    (0, 0, 255),
+                    1,
+                )
 
             self._last_line_state = line_state
             result = LineFollowResult(
@@ -871,11 +1158,18 @@ class Follow:
         # The gap search kept jumping to new contours and used up all iterations.
         # (center_processor falls off the end and returns None here; we return NO_LINE instead.)
         self._last_line_state = LineState.NO_LINE
-        result = LineFollowResult(state=LineState.NO_LINE, p_green=p_green, time_stamp=time.time(), debug_frame=debug_frame)
+        result = LineFollowResult(
+            state=LineState.NO_LINE,
+            p_green=p_green,
+            time_stamp=time.time(),
+            debug_frame=debug_frame,
+        )
         self.last_result = result
         return result
 
-    def _search_contour_in_direction(self, blk_contours, center, direction_angle, angle_tolerance_degs, debug_frame=None):
+    def _search_contour_in_direction(
+        self, blk_contours, center, direction_angle, angle_tolerance_degs, debug_frame=None
+    ):
         best_contour = None
         best_distance = 0.0
 
@@ -921,13 +1215,18 @@ class Follow:
                 )
 
         if debug_frame is not None:
-            end_pt = (int(cx + 100 * math.cos(direction_angle)), int(cy + 100 * math.sin(direction_angle)))
+            end_pt = (
+                int(cx + 100 * math.cos(direction_angle)),
+                int(cy + 100 * math.sin(direction_angle)),
+            )
             cv2.circle(debug_frame, (cx, cy), 5, (255, 100, 0), -1)
             cv2.line(debug_frame, (cx, cy), end_pt, (255, 100, 0), 1)
 
         return best_contour
 
-    def _calculate_gap_start_target_from_local_end(self, line_contour, line_binary, start_point, image_height, debug_frame=None):
+    def _calculate_gap_start_target_from_local_end(
+        self, line_contour, line_binary, start_point, image_height, debug_frame=None
+    ):
         contour_points = line_contour.reshape(-1, 2)
         if contour_points.size == 0:
             return None
@@ -980,7 +1279,9 @@ class Follow:
                 cv2.circle(debug_frame, gap_anchor, radius, (0, 0, 255), 1)
                 cv2.circle(debug_frame, gap_anchor, 4, (0, 0, 255), -1)
                 cv2.drawContours(debug_frame, [rect_box], -1, (0, 0, 255), thickness=1)
-                self._draw_debug_text_on_top(debug_frame, "gap border", gap_anchor, color=(0, 0, 255))
+                self._draw_debug_text_on_top(
+                    debug_frame, "gap border", gap_anchor, color=(0, 0, 255)
+                )
             return None
 
         rect_mask = np.zeros(line_binary.shape, dtype=np.uint8)
@@ -988,17 +1289,23 @@ class Follow:
         rect_area = cv2.countNonZero(rect_mask)
         rect_black_ratio = 0.0
         if rect_area > 0:
-            rect_black_ratio = cv2.countNonZero(cv2.bitwise_and(line_binary, rect_mask)) / rect_area
+            rect_black_ratio = (
+                cv2.countNonZero(cv2.bitwise_and(line_binary, rect_mask)) / rect_area
+            )
         if rect_black_ratio < self.GAP_START_LOCAL_MIN_RECT_BLACK_RATIO:
             if debug_frame is not None:
                 cv2.circle(debug_frame, gap_anchor, radius, (0, 0, 255), 1)
                 cv2.circle(debug_frame, gap_anchor, 4, (0, 0, 255), -1)
                 cv2.drawContours(debug_frame, [rect_box], -1, (0, 0, 255), thickness=1)
-                self._draw_debug_text_on_top(debug_frame, f"gap fill {rect_black_ratio:.2f}", gap_anchor, color=(0, 0, 255))
+                self._draw_debug_text_on_top(
+                    debug_frame, f"gap fill {rect_black_ratio:.2f}", gap_anchor, color=(0, 0, 255)
+                )
             return None
 
         aspect_ratio = max(rect_w / rect_h, rect_h / rect_w)
-        if aspect_ratio < self.GAP_CONTOUR_MIN_ASPECT_RATIO or min(rect_w, rect_h) < (self.GAP_CONTOUR_MIN_RELATIVE_SIZE * image_height):
+        if aspect_ratio < self.GAP_CONTOUR_MIN_ASPECT_RATIO or min(rect_w, rect_h) < (
+            self.GAP_CONTOUR_MIN_RELATIVE_SIZE * image_height
+        ):
             if debug_frame is not None:
                 cv2.circle(debug_frame, gap_anchor, radius, (0, 0, 255), 1)
                 cv2.circle(debug_frame, gap_anchor, 4, (0, 0, 255), -1)
@@ -1008,7 +1315,9 @@ class Follow:
                     cv2.drawContours(debug_frame, local_contours, -1, (0, 0, 255), thickness=1)
 
                 cv2.drawContours(debug_frame, [rect_box], -1, (0, 0, 255), thickness=1)
-                self._draw_debug_text_on_top(debug_frame, f"gap aspect {aspect_ratio:.1f}", gap_anchor, color=(0, 0, 255))
+                self._draw_debug_text_on_top(
+                    debug_frame, f"gap aspect {aspect_ratio:.1f}", gap_anchor, color=(0, 0, 255)
+                )
             return None
 
         vx, vy, _, _ = cv2.fitLine(local_points, cv2.DIST_L2, 0, 0.01, 0.01)
@@ -1049,8 +1358,14 @@ class Follow:
 
             line_length = int(target_distance)
 
-            fit_start = (int(gap_anchor[0] - direction[0] * line_length), int(gap_anchor[1] - direction[1] * line_length))
-            fit_end = (int(gap_anchor[0] + direction[0] * line_length), int(gap_anchor[1] + direction[1] * line_length))
+            fit_start = (
+                int(gap_anchor[0] - direction[0] * line_length),
+                int(gap_anchor[1] - direction[1] * line_length),
+            )
+            fit_end = (
+                int(gap_anchor[0] + direction[0] * line_length),
+                int(gap_anchor[1] + direction[1] * line_length),
+            )
 
             fit_start, fit_end = clip_line(debug_frame, fit_start, fit_end)
 
@@ -1071,16 +1386,25 @@ class Follow:
 
     def _preprocess_frame(self, frame):
         grayscale_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blurred_grayscale_frame = cv2.boxFilter(grayscale_frame, -1, (self.BLUR_GRAYSCALE, self.BLUR_GRAYSCALE))
+        blurred_grayscale_frame = cv2.boxFilter(
+            grayscale_frame, -1, (self.BLUR_GRAYSCALE, self.BLUR_GRAYSCALE)
+        )
         blurred_rgb_frame = cv2.boxFilter(frame, -1, (self.BLUR_HSV, self.BLUR_HSV))
         hsv_frame = cv2.cvtColor(blurred_rgb_frame, cv2.COLOR_BGR2HSV)
         return blurred_grayscale_frame, hsv_frame
 
     def _generate_binaries(self, grayscale_frame, hsv_frame):
         if self.BLACK_THRESHOLD_MODE == "fixed":
-            _, blk_binary = cv2.threshold(grayscale_frame, self.BLACK_THRESH_FIXED, 255, cv2.THRESH_BINARY_INV)
+            _, blk_binary = cv2.threshold(
+                grayscale_frame, self.BLACK_THRESH_FIXED, 255, cv2.THRESH_BINARY_INV
+            )
         else:
-            blk_binary = adaptive_threshold(grayscale_frame, self.ADAPTIVE_THRESHOLD_BLOCK_SIZE, self.ADAPTIVE_THRESHOLD_C, True)
+            blk_binary = adaptive_threshold(
+                grayscale_frame,
+                self.ADAPTIVE_THRESHOLD_BLOCK_SIZE,
+                self.ADAPTIVE_THRESHOLD_C,
+                True,
+            )
         grn_binary = cv2.inRange(hsv_frame, self.THRESHOLD_GREEN[0], self.THRESHOLD_GREEN[1])
         return blk_binary, grn_binary
 
@@ -1093,7 +1417,9 @@ class Follow:
             return get_closest_contour_to_contour(blk_contours, self._last_line_contour)
         return get_largest_contour(blk_contours)
 
-    def _assign_new_start_end_contour(self, last_start, last_end, default_start, default_end, edge_contours):
+    def _assign_new_start_end_contour(
+        self, last_start, last_end, default_start, default_end, edge_contours
+    ):
         if len(edge_contours) == 0:
             return None, None
         elif len(edge_contours) == 1:
@@ -1108,16 +1434,24 @@ class Follow:
             return (contour, None) if distance_to_start < distance_to_end else (None, contour)
         else:
             min_start, min_end = None, None
-            min_start_dist, min_end_dist = float('inf'), float('inf')
+            min_start_dist, min_end_dist = float("inf"), float("inf")
             second_best_start, second_best_end = None, None
-            second_best_start_dist, second_best_end_dist = float('inf'), float('inf')
+            second_best_start_dist, second_best_end_dist = float("inf"), float("inf")
             for contour in edge_contours:
                 if last_start is None and last_end is None:
                     start_dist = calculate_distance_between_points(default_start, contour.center)
                     end_dist = calculate_distance_between_points(default_end, contour.center)
                 else:
-                    start_dist = calculate_manhattan_distance(last_start, contour.center) if last_start else 10000.0
-                    end_dist = calculate_manhattan_distance(last_end, contour.center) if last_end else 10000.0
+                    start_dist = (
+                        calculate_manhattan_distance(last_start, contour.center)
+                        if last_start
+                        else 10000.0
+                    )
+                    end_dist = (
+                        calculate_manhattan_distance(last_end, contour.center)
+                        if last_end
+                        else 10000.0
+                    )
                 if start_dist < min_start_dist:
                     second_best_start, second_best_start_dist = min_start, min_start_dist
                     min_start, min_start_dist = contour, start_dist
@@ -1333,7 +1667,9 @@ class Follow:
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        lower_green = np.array([self.GREEN_H_LOW, self.GREEN_S_LOW, self.GREEN_V_LOW], dtype=np.uint8)
+        lower_green = np.array(
+            [self.GREEN_H_LOW, self.GREEN_S_LOW, self.GREEN_V_LOW], dtype=np.uint8
+        )
         upper_green = np.array([self.GREEN_H_HIGH, 255, 255], dtype=np.uint8)
 
         return cv2.inRange(hsv, lower_green, upper_green)
@@ -1483,7 +1819,7 @@ class Follow:
         return self._adjust_angle(angle)
 
     def _adjust_angle(self, angle):
-        adjusted_angle = angle - .5 * math.pi
+        adjusted_angle = angle - 0.5 * math.pi
         if adjusted_angle < -math.pi:
             adjusted_angle += 2 * math.pi
         elif adjusted_angle > math.pi:
@@ -1550,7 +1886,10 @@ class Follow:
             for center, ignore_count in old_markers.items():
                 if known_marker:
                     break
-                if calculate_distance_between_points(green_contour.center, center) < self.GREEN_TRACKING_DISTANCE:
+                if (
+                    calculate_distance_between_points(green_contour.center, center)
+                    < self.GREEN_TRACKING_DISTANCE
+                ):
                     self._green_markers_memory[green_contour.center] = ignore_count
                     known_marker = True
             if not known_marker:
@@ -1577,13 +1916,23 @@ class Follow:
     # Debug drawing helpers
     # ------------------------------------------------------------------
 
-    def _draw_debug_text_on_top(self, debug_frame, text, position, color=(255, 255, 255), scale=0.3, outline=2):
+    def _draw_debug_text_on_top(
+        self, debug_frame, text, position, color=(255, 255, 255), scale=0.3, outline=2
+    ):
         pos = (int(position[0]), int(position[1]))
-        cv2.putText(debug_frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), outline + 1)
+        cv2.putText(
+            debug_frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), outline + 1
+        )
         cv2.putText(debug_frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1)
 
     def _draw_subtle_default_points(self, debug_frame, start_point, end_point):
-        cv2.circle(debug_frame, (int(start_point[0]), min(int(start_point[1]), debug_frame.shape[0] - 1)), 3, (120, 120, 120), -1)
+        cv2.circle(
+            debug_frame,
+            (int(start_point[0]), min(int(start_point[1]), debug_frame.shape[0] - 1)),
+            3,
+            (120, 120, 120),
+            -1,
+        )
         cv2.circle(debug_frame, (int(end_point[0]), int(end_point[1])), 3, (120, 120, 120), -1)
 
     def _debug_draw_contours(self, debug_frame, contours, color):
@@ -1688,7 +2037,11 @@ class Follow:
 
             if state == LineState.U_TURN:
                 # Original U-turn handling: green on both sides
-                if self.last_green_time < time.monotonic() < self.last_green_time + self.U_TURN_COOLDOWN:
+                if (
+                    self.last_green_time
+                    < time.monotonic()
+                    < self.last_green_time + self.U_TURN_COOLDOWN
+                ):
                     self.logger.info("U-turn detected within cooldown of last green turn")
                     self.robot.drive_PID(200)
                     time.sleep(0.1)
@@ -1714,11 +2067,13 @@ class Follow:
                 # all of them give a steering angle pointing at the next piece of line.
                 self.no_line_frames = 0
 
-                target_angle = float(np.clip(
-                    math.degrees(result.angle),
-                    -self.MAX_TARGET_ANGLE,
-                    self.MAX_TARGET_ANGLE,
-                ))
+                target_angle = float(
+                    np.clip(
+                        math.degrees(result.angle),
+                        -self.MAX_TARGET_ANGLE,
+                        self.MAX_TARGET_ANGLE,
+                    )
+                )
 
                 error_pid = self.pid.update(target_angle, dt)
 
@@ -1727,7 +2082,7 @@ class Follow:
                 turn_strength = abs(turn_error) / self.MAX_TURN
 
                 # Slow down on large steering errors
-                speed_scale = 1.0 / (1.0 + self.TURN_SLOWDOWN_FACTOR * turn_strength ** 2)
+                speed_scale = 1.0 / (1.0 + self.TURN_SLOWDOWN_FACTOR * turn_strength**2)
                 velocity = self.VELOCITY * speed_scale
 
                 if self.debug:
