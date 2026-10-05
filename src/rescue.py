@@ -301,7 +301,7 @@ class Rescue:
         elif dist > 500 and dist < 800:
             self.logger.info("Wall is very far away, driving forwards into centre...")
             self.robot.drive_dist_enc((dist / 2), 500)
-            time.sleep(dist * 12)
+            time.sleep((dist / 1000) * 12)
 
         # Lift the ball.
         self.robot.lift("up")
