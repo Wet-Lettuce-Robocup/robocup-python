@@ -223,7 +223,7 @@ class Robot:
     def lift(self, action):
         """Action: "up" or "down"."""
         if action == "up":
-            self.servo_lift.set_angle(180)
+            self.servo_lift.set_angle(178)
             time.sleep(0.5)
         elif action == "down":
             self.servo_lift.set_angle(44)

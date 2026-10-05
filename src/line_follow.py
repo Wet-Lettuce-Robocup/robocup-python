@@ -2069,14 +2069,9 @@ class Follow:
                 # all of them give a steering angle pointing at the next piece of line.
                 self.no_line_frames = 0
 
-                if state == LineState.INTERSECTION_GREEN:
-                    angle = result.angle * 1.6
-                else:
-                    angle = result.angle
-
                 target_angle = float(
                     np.clip(
-                        math.degrees(angle),
+                        math.degrees(result.angle),
                         -self.MAX_TARGET_ANGLE,
                         self.MAX_TARGET_ANGLE,
                     )

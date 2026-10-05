@@ -41,7 +41,6 @@ class Rescue:
         self.is_targetting_balls = True
         self.green_found = False
         self.red_found = False
-        self.exit_found = False
 
         self.angle_check_count = 0
 
@@ -266,42 +265,66 @@ class Rescue:
         self.logger.info(f"Grabbing {colour} ball")
 
         claw_distance = self.robot.get_claw_distance()
+        if claw_distance == -1:
+            claw_distance = self.robot.get_claw_distance()
         self.logger.info(f"Claw distance before grab: {claw_distance}mm")
 
         if claw_distance > -1 and claw_distance < 100:
-            self.robot.drive_dist_enc(claw_distance + 10, 250)
+            drive_dist = claw_distance + 14
         else:
-            self.robot.drive_dist_enc(65, velocity=250)
-        time.sleep(1.5)
+            drive_dist = 68
+
+        self.robot.drive_dist_enc(drive_dist, 250)
+        time.sleep((drive_dist / 1000) * 24)
 
         self.robot.claw("grab")
 
-        # Assume the ball was successfully grabbed.
-        # # The claw TOF can be used here later if required.
         claw_distance = self.robot.get_claw_distance()
+        if claw_distance == -1:
+            claw_distance = self.robot.get_claw_distance()
         self.logger.info(f"Claw distance after grab: {claw_distance}mm")
 
-        if claw_distance > 15:
+        if claw_distance >= 12:
             self.logger.warning("Ball must have been lost? Trying again")
-            self.robot.lift("up")
-            self.robot.drive_dist_enc(-200, 500)
-            time.sleep(2)
-            self.target_ball = None
-            self._transition_to(Task.APPROACH_BALL)
-            return
+
+            claw_distance = self.robot.get_claw_distance()
+            if claw_distance == -1:
+                claw_distance = self.robot.get_claw_distance()
+            self.logger.info(f"Claw distance after after grab: {claw_distance}mm")
+
+            if claw_distance <= 12:
+                self.logger.warning("Ball has been found i guess")
+            else:
+                positions = self.scan_for_balls()
+
+                if not positions:
+                    self.logger.warning("Ball lost during approach")
+                    self.target_ball = None
+                    self._transition_to(Task.SCAN)
+                    return
+
+                self.target_ball = positions[0]
+
+                if self.target_ball:
+                    self.robot.lift("up")
+                    self.robot.drive_dist_enc(-200, 500)
+                    time.sleep(2)
+                    self.target_ball = None
+                    self._transition_to(Task.APPROACH_BALL)
+                    return
+                else:
+                    self.logger.info("No ball visible so I guess I grabbed it?")
 
         self.tray_handler("grab", colour)
 
         # Reverse away from the ball.
         dist = self.robot.get_front_distance()
-        if dist > 0 and dist < 150:
+        if dist == -1:
+            dist = self.robot.get_front_distance()
+        if dist > 0 and dist < 400:
             self.logger.info("Wall is very close, reversing...")
             self.robot.drive_dist_enc(-150, 400)
             time.sleep(2)
-        elif dist > 500 and dist < 800:
-            self.logger.info("Wall is very far away, driving forwards into centre...")
-            self.robot.drive_dist_enc((dist / 2), 500)
-            time.sleep((dist / 1000) * 12)
 
         # Lift the ball.
         self.robot.lift("up")
@@ -323,6 +346,7 @@ class Rescue:
         self.robot.drive_dist_enc(-160, 400)
         time.sleep(3.5)
 
+        self.robot.drive_dist_enc(5, 300)
         self.robot.tray("release")
         time.sleep(1.5)
         self.robot.drive_dist_enc(10, 300)
@@ -332,6 +356,7 @@ class Rescue:
         self.robot.tray("reset")
 
         self.robot.drive_dist_enc(300, 500)
+        time.sleep(4)
 
         if (
             self.ball_storage["tray_1"] == self.ball_storage["tray_2"]
@@ -339,6 +364,8 @@ class Rescue:
         ):
             # Released two balls
             self.robot.claw("release")
+            self.tray_handler("release")
+
             time.sleep(0.5)
             self.robot.claw("grab")
 
@@ -353,7 +380,7 @@ class Rescue:
 
         self.logger.info(f"Finished dumping at {colour} evacuation point")
 
-    def left_wall_follow(self, target_distance=50):
+    def left_wall_follow(self, target_distance=100):
         """
         Basic left-wall following.
         Distances returned by Robot are in mm.
@@ -374,51 +401,21 @@ class Rescue:
             return ("error", 0)
 
         # Wall directly ahead.
-        if front_dist < 200:
+        if front_dist < 100:
             return "right", 0
 
         # No wall on left means we may have reached the exit.
-        if left_dist >= 400:
+        if left_dist >= 1200:
             return "exit", 0
 
         error = target_distance - left_dist
 
         # Convert wall distance error into a small turning angle.
-        angle = error * 1
-        angle = max(-45, min(45, angle))
+        angle = error * 0.06
+        angle = max(-1.5, min(1.5, angle))
+        self.logger.info(f"Angle during wall following: {angle * 60}")
+
         return "wall", angle
-
-    def locate_exit(self):
-        """Follow the left wall until the rescue exit is found."""
-
-        self.logger.info("Locating rescue exit")
-
-        while True:
-            status, angle = self.left_wall_follow()
-
-            if status == "error":
-                self.logger.warning("Invalid TOF data during wall following")
-                self.robot.stop_moving()
-                time.sleep(0.1)
-                continue
-
-            if status == "exit":
-                self.logger.info("Rescue exit detected")
-                self.robot.stop_moving()
-                self.exit_found = True
-                return
-
-            if status == "right":
-                self.logger.info("Wall ahead, turning right")
-                self.robot.stop_moving()
-                self.robot.spin_enc(90)
-                time.sleep(3)
-                continue
-
-            if status == "wall":
-                # Small movement while correcting against wall.
-                self.robot.drive_PID(vel=320, angular_vel=int(angle * 60))
-                time.sleep(0.1)
 
     def get_debug_frame(self):
         frame = self.vision.get_camera_frame()
@@ -441,7 +438,6 @@ class Rescue:
             self.is_targetting_balls = True
             self.green_found = False
             self.red_found = False
-            self.exit_found = False
 
             self.angle_check_count = 0
 
@@ -525,7 +521,8 @@ class Rescue:
 
                 self.task_started = True
 
-                if self.target_ball["dist"] < 0.15:
+                ball_dist = self.target_ball["dist"]
+                if ball_dist < 0.15:
                     self.robot.drive_dist_enc(-150)
                     time.sleep(2)
                     positions = self.scan_for_balls()
@@ -590,7 +587,7 @@ class Rescue:
             if self.angle_check_count >= 5 or done:
                 self.angle_check_count = 0
 
-                self.robot.spin_enc(8, 200)
+                self.robot.spin_enc(10, 200)
 
                 positions = self.scan_for_balls()
 
@@ -599,6 +596,8 @@ class Rescue:
                     self.target_ball = None
                     self._transition_to(Task.SCAN)
                     return
+
+                self.target_ball = positions[0]
 
                 # Move close enough for the claw.
                 distance = self.target_ball["dist"]
@@ -697,6 +696,10 @@ class Rescue:
             self.dump_balls()
 
             if self.red_found:
+                self.led.set_brightness(0)
+                self.robot.drive_PID(300)
+                self.logger.info("Locating rescue exit")
+
                 self._transition_to(Task.LOCATE_EXIT)
             else:
                 self._transition_to(Task.SCAN)
@@ -704,16 +707,39 @@ class Rescue:
         elif self.current_task == Task.LOCATE_EXIT:
             # loop to find exit
             if not self.task_started:
-                self.task_started = True
+                if self.robot.limit_switch_pressed():
+                    self.task_started = True
+                    self.robot.stop_moving()
+                    self.robot.drive_dist_enc(-100)
+                    time.sleep(2)
+                    self.robot.spin_enc(90)
+                    time.sleep(3)
 
-                self.led.set_brightness(0)
+            status, angle = self.left_wall_follow()
 
-                self.robot.spin_enc(90)
+            if status == "error":
+                self.logger.warning("Invalid TOF data during wall following")
+                self.robot.stop_moving()
+                time.sleep(0.1)
+
+            elif status == "exit":
+                self.logger.info("Rescue exit detected")
+                self.robot.drive_dist_enc(100)
+                time.sleep(2)
+                self.robot.spin_enc(-90)
+                time.sleep(3)
+                self.robot.drive_dist_enc(150)
+                time.sleep(2)
+                self._transition_to(Task.EXIT)
+
+            elif status == "right":
+                self.logger.info("Wall ahead, turning right")
+                self.robot.stop_moving()
+                self.robot.spin_enc(90, 450)
                 time.sleep(3)
 
-            self.locate_exit()
-
-            self._transition_to(Task.EXIT)
+            elif status == "wall":
+                self.robot.drive_PID(vel=300, angular_vel=int(angle * 60))
 
         elif self.current_task == Task.EXIT:
             # end rescue and start line follow
