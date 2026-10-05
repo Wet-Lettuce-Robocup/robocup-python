@@ -392,7 +392,7 @@ class Follow:
     U_TURN_SETTLE_TIME = 5  # seconds to wait for spin_enc to finish
 
     # ---- [TUNE] Rescue (red) detection (original) ----------------------
-    MIN_RED = 600  # red pixels / contour area that trigger EXIT
+    MIN_RED = 500  # red pixels / contour area that trigger EXIT
     RED_S_MIN = 160
     RED_V_MIN = 63
 
@@ -2010,10 +2010,12 @@ class Follow:
                 self.robot.spin_enc(80, 550)
                 time.sleep(3)
                 self.robot.drive_PID(600, -490)
-                time.sleep(3.6)
+                time.sleep(4)
                 self.robot.drive_PID(200)
 
             if self.lineInFrame():
+                self.robot.drive_PID(200)
+                time.sleep(0.2)
                 self.robot.stop_moving()
                 self._transition_to(Task.FOLLOW)
 
